@@ -33,7 +33,16 @@ history are persisted in the shared database.
 ```env
 EXPO_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-key
+EXPO_PUBLIC_AUTH_REDIRECT_URL=https://rayfrank.github.io/RentManagement/
 ```
+
+In Supabase, open **Authentication → URL Configuration** and set:
+
+- Site URL: `https://rayfrank.github.io/RentManagement/`
+- Redirect URL: `https://rayfrank.github.io/RentManagement/**`
+
+These URLs let verification and password-recovery emails return to the deployed
+RentFlow authentication screen instead of a local development address.
 
 The first account automatically receives an Owner workspace. Additional staff first
 create their own RentFlow account, after which the owner adds their email under

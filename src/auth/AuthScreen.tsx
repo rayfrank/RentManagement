@@ -83,7 +83,7 @@ export function AuthScreen() {
         <View style={styles.lightWash} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.pageContent} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={[styles.pageContent, !wide && { width: Math.max(width - 48, 272), maxWidth: Math.max(width - 48, 272), paddingHorizontal: 0 }]} keyboardShouldPersistTaps="handled">
         <View style={styles.topRow}>
           <Brand styles={styles} />
           <ThemePicker compact={!wide} theme={theme} setTheme={setTheme} palette={palette} styles={styles} />

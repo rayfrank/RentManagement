@@ -1,6 +1,7 @@
 {
   "expo": {
     "name": "RentFlow",
+    "owner": "rayfrank",
     "slug": "rentflow",
     "version": "1.0.0",
     "orientation": "default",
@@ -26,6 +27,11 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "10a32d70-cf23-4ae2-b6f4-c4f629666838"
+      }
     }
   }
 }

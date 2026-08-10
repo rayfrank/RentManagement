@@ -103,7 +103,7 @@ export function AuthScreen() {
             </View>
           )}
 
-          <View style={styles.cardShell}>
+          <View style={[styles.cardShell, !wide && { maxWidth: Math.max(width - 48, 272) }]}>
             <View style={styles.cardHighlight} />
             <View style={styles.card}>
               {!passwordRecovery && mode !== 'forgot' && (

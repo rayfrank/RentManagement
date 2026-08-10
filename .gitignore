@@ -34,6 +34,10 @@ yarn-error.*
 .env*.local
 OpenApiKey.txt
 
+# Supabase CLI cache (keep the existing project-link metadata)
+supabase/.temp/*
+!supabase/.temp/linked-project.json
+
 # typescript
 *.tsbuildinfo
 

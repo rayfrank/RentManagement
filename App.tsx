@@ -16,12 +16,19 @@ import {
 import { AuthProvider, type Account, useAuth } from './src/auth/AuthProvider';
 import { AuthScreen } from './src/auth/AuthScreen';
 import { AIWorkspace, type ReceiptPrefill } from './src/ai/AIWorkspace';
-import { addOrganizationMember, fetchAuditEvents, fetchPayments, fetchProperties, savePaymentRecord, savePropertyRecord, type StoredAuditEvent, type StoredPayment, type StoredProperty } from './src/data/records';
+import { addHouseholdMember, addOrganizationMember, fetchAuditEvents, fetchPayments, fetchProperties, importGithuraiRegister, savePaymentRecord, savePropertyRecord, updatePropertyPaymentStatus, type StoredAuditEvent, type StoredHouseholdMember, type StoredPayment, type StoredProperty } from './src/data/records';
 import { ThemeProvider, themes, type ThemeName, type ThemePalette, useTheme } from './src/theme/ThemeProvider';
 import { GlassControl } from './src/theme/GlassControl';
 
 type Screen = 'overview' | 'properties' | 'collections' | 'ai' | 'activity';
 type PaymentStatus = 'Paid' | 'Partial' | 'Overdue';
+type PaymentMethod = 'mpesa' | 'bank';
+
+type HouseholdMember = {
+  id?: string;
+  fullName: string;
+  phone?: string;
+};
 
 type Property = {
   id?: string;
@@ -30,6 +37,7 @@ type Property = {
   rent: number;
   services: number;
   status: PaymentStatus | 'Vacant';
+  members: HouseholdMember[];
 };
 
 type Payment = {
@@ -42,6 +50,7 @@ type Payment = {
   accountName: string;
   date: string;
   reference: string;
+  method: PaymentMethod;
   status: PaymentStatus;
   recordedBy: string;
   recordedAt: string;
@@ -79,26 +88,26 @@ const colors: ThemePalette = {
 };
 
 const demoProperties: Property[] = [
-  { houseNumber: '274', tenant: 'Jane Wanjiku', rent: 28000, services: 2000, status: 'Paid' },
-  { houseNumber: '118', tenant: 'Brian Ouma', rent: 22000, services: 1500, status: 'Overdue' },
-  { houseNumber: '203', tenant: 'Amina Yusuf', rent: 26000, services: 1800, status: 'Paid' },
-  { houseNumber: '312', tenant: 'No tenant', rent: 32000, services: 2000, status: 'Vacant' },
-  { houseNumber: '105', tenant: 'Lydia Njeri', rent: 18000, services: 1200, status: 'Partial' },
-  { houseNumber: '405', tenant: 'Peter Mwangi', rent: 30000, services: 2000, status: 'Paid' },
+  { houseNumber: '274', tenant: 'Jane Wanjiku', rent: 28000, services: 2000, status: 'Paid', members: [{ fullName: 'Jane Wanjiku' }] },
+  { houseNumber: '118', tenant: 'Brian Ouma', rent: 22000, services: 1500, status: 'Overdue', members: [{ fullName: 'Brian Ouma' }] },
+  { houseNumber: '203', tenant: 'Amina Yusuf', rent: 26000, services: 1800, status: 'Paid', members: [{ fullName: 'Amina Yusuf' }] },
+  { houseNumber: '312', tenant: 'No tenant', rent: 32000, services: 2000, status: 'Vacant', members: [] },
+  { houseNumber: '105', tenant: 'Lydia Njeri', rent: 18000, services: 1200, status: 'Partial', members: [{ fullName: 'Lydia Njeri' }] },
+  { houseNumber: '405', tenant: 'Peter Mwangi', rent: 30000, services: 2000, status: 'Paid', members: [{ fullName: 'Peter Mwangi' }] },
 ];
 
 const initialPayments: Payment[] = [
   {
     id: '1', houseNumber: '274', tenant: 'Jane Wanjiku', rent: 28000, services: 2000,
-    deposit: 0, accountName: 'Kamau Properties', date: '1 Aug 2026', reference: 'QH82K4D6PZ', status: 'Paid', recordedBy: 'Ray Kamau', recordedAt: '1 Aug 2026, 9:14 AM',
+    deposit: 0, accountName: 'Kamau Properties', date: '1 Aug 2026', reference: 'QH82K4D6PZ', method: 'mpesa', status: 'Paid', recordedBy: 'Ray Kamau', recordedAt: '1 Aug 2026, 9:14 AM',
   },
   {
     id: '2', houseNumber: '203', tenant: 'Amina Yusuf', rent: 26000, services: 1800,
-    deposit: 0, accountName: 'Kamau Properties', date: '3 Aug 2026', reference: 'QH93TM2L8A', status: 'Paid', recordedBy: 'Grace Njeri', recordedAt: '3 Aug 2026, 11:32 AM',
+    deposit: 0, accountName: 'Co-operative Bank', date: '3 Aug 2026', reference: 'QH93TM2L8A', method: 'bank', status: 'Paid', recordedBy: 'Grace Njeri', recordedAt: '3 Aug 2026, 11:32 AM',
   },
   {
     id: '3', houseNumber: '105', tenant: 'Lydia Njeri', rent: 10000, services: 1200,
-    deposit: 0, accountName: 'Kamau Properties', date: '5 Aug 2026', reference: 'QH54WN7C1R', status: 'Partial', recordedBy: 'Ray Kamau', recordedAt: '5 Aug 2026, 4:08 PM',
+    deposit: 0, accountName: 'Kamau Properties', date: '5 Aug 2026', reference: 'QH54WN7C1R', method: 'mpesa', status: 'Partial', recordedBy: 'Ray Kamau', recordedAt: '5 Aug 2026, 4:08 PM',
   },
 ];
 
@@ -127,6 +136,7 @@ const paymentFromRecord = (record: StoredPayment): Payment => ({
   accountName: record.paid_to_name,
   date: displayDate(record.payment_date),
   reference: record.payment_reference,
+  method: record.payment_method ?? 'mpesa',
   status: `${record.status.charAt(0).toUpperCase()}${record.status.slice(1)}` as PaymentStatus,
   recordedBy: relationName(record.creator) ?? 'Former team member',
   recordedAt: displayDate(record.created_at, true),
@@ -135,7 +145,7 @@ const paymentFromRecord = (record: StoredPayment): Payment => ({
 const auditFromRecord = (record: StoredAuditEvent): AuditEvent => {
   const values = record.new_values ?? record.old_values ?? {};
   const house = String(values.house_number ?? 'record');
-  const entity = record.entity_type === 'payments' ? 'Payment' : record.entity_type === 'organization_members' ? 'Account' : 'Property';
+  const entity = record.entity_type === 'payments' ? 'Payment' : record.entity_type === 'organization_members' ? 'Account' : record.entity_type === 'household_members' ? 'Tenant' : 'Property';
   const action = record.action === 'INSERT' ? 'Created' : record.action === 'DELETE' ? 'Deleted' : 'Updated';
   const changed = record.changed_fields.length ? `Changed ${record.changed_fields.join(', ').replaceAll('_', ' ')}` : `${action} this ${entity.toLowerCase()}`;
   return {
@@ -144,7 +154,7 @@ const auditFromRecord = (record: StoredAuditEvent): AuditEvent => {
     actorRole: 'Team member',
     action,
     entity,
-    subject: entity === 'Account' ? 'Team access' : `House ${house}`,
+    subject: entity === 'Account' ? 'Team access' : entity === 'Tenant' ? String(values.full_name ?? 'Household member') : `House ${house}`,
     detail: changed,
     occurredAt: displayDate(record.occurred_at, true),
   };
@@ -157,6 +167,7 @@ const propertyFromRecord = (record: StoredProperty): Property => ({
   rent: Number(record.monthly_rent),
   services: Number(record.service_charge),
   status: `${record.status.charAt(0).toUpperCase()}${record.status.slice(1)}` as Property['status'],
+  members: (record.household_members ?? []).filter((member) => member.active).map((member: StoredHouseholdMember) => ({ id: member.id, fullName: member.full_name, phone: member.phone ?? undefined })),
 });
 
 export default function App() {
@@ -212,17 +223,27 @@ function RentFlowApp() {
   if (passwordRecovery || !account) return <AuthScreen />;
 
   const addPayment = async (draft: CollectionDraft) => {
+    const property = propertyRecords.find((item) => item.houseNumber.toLowerCase() === draft.houseNumber.toLowerCase());
+    const received = draft.rent + draft.services + draft.deposit;
+    const due = property ? property.rent + property.services : received;
+    const paymentStatus: PaymentStatus = received >= due ? 'Paid' : 'Partial';
     const liveId = account.organizationId && !account.demo
-      ? await savePaymentRecord({ ...draft, organizationId: account.organizationId, actorId: account.id })
+      ? await savePaymentRecord({ ...draft, status: paymentStatus.toLowerCase() as 'paid' | 'partial', organizationId: account.organizationId, actorId: account.id })
       : `${Date.now()}`;
     const payment: Payment = {
       ...draft,
       id: liveId,
-      status: 'Paid',
+      status: paymentStatus,
       recordedBy: account.fullName,
       recordedAt: 'Just now',
     };
     setPayments((current) => [payment, ...current]);
+    if (property) {
+      setPropertyRecords((current) => current.map((item) => item.houseNumber === property.houseNumber ? { ...item, status: paymentStatus } : item));
+      if (property.id && !account.demo && (account.role === 'Owner' || account.role === 'Manager')) {
+        updatePropertyPaymentStatus(property.id, paymentStatus.toLowerCase() as 'paid' | 'partial').catch(() => undefined);
+      }
+    }
     setLatestPayment(payment);
     setAuditEvents((current) => [{
       id: `audit-${Date.now()}`,
@@ -255,10 +276,11 @@ function RentFlowApp() {
   };
 
   const addProperty = async (draft: Omit<Property, 'status'>) => {
+    let propertyId: string | undefined;
     if (account.organizationId && !account.demo) {
-      await savePropertyRecord({ ...draft, organizationId: account.organizationId, actorId: account.id });
+      propertyId = await savePropertyRecord({ ...draft, organizationId: account.organizationId, actorId: account.id });
     }
-    const property: Property = { ...draft, status: draft.tenant.trim() ? 'Overdue' : 'Vacant' };
+    const property: Property = { ...draft, id: propertyId, status: draft.tenant.trim() ? 'Overdue' : 'Vacant' };
     setPropertyRecords((current) => [...current, property].sort((a, b) => a.houseNumber.localeCompare(b.houseNumber, undefined, { numeric: true })));
     setAuditEvents((current) => [{
       id: `audit-property-${Date.now()}`,
@@ -271,6 +293,29 @@ function RentFlowApp() {
       occurredAt: 'Just now',
     }, ...current]);
     setNotice(`House ${property.houseNumber} added successfully.`);
+  };
+
+  const markPropertyStatus = async (property: Property, status: PaymentStatus) => {
+    if (property.id && !account.demo) await updatePropertyPaymentStatus(property.id, status.toLowerCase() as 'paid' | 'partial' | 'overdue');
+    setPropertyRecords((current) => current.map((item) => item.houseNumber === property.houseNumber ? { ...item, status } : item));
+    setNotice(`House ${property.houseNumber} marked ${status === 'Overdue' ? 'not paid' : status.toLowerCase()}.`);
+  };
+
+  const addPropertyMember = async (property: Property, fullName: string) => {
+    let member: HouseholdMember = { fullName };
+    if (property.id && account.organizationId && !account.demo) {
+      const stored = await addHouseholdMember({ organizationId: account.organizationId, propertyId: property.id, actorId: account.id, fullName });
+      member = { id: stored.id, fullName: stored.full_name, phone: stored.phone ?? undefined };
+    }
+    setPropertyRecords((current) => current.map((item) => item.houseNumber === property.houseNumber ? { ...item, members: [...item.members, member] } : item));
+    setNotice(`${fullName} added to House ${property.houseNumber}.`);
+  };
+
+  const importRegister = async () => {
+    if (!account.organizationId || account.demo) throw new Error('Sign in to a live owner account to import the workbook register.');
+    const records = await importGithuraiRegister(account.organizationId, account.id);
+    setPropertyRecords(records.map(propertyFromRecord));
+    setNotice('Githurai register imported: 24 houses and all listed household members.');
   };
 
   const useScannedReceipt = (prefill: ReceiptPrefill) => {
@@ -309,7 +354,7 @@ function RentFlowApp() {
               onCollect={() => setScreen('collections')}
             />
           )}
-          {screen === 'properties' && <PropertiesScreen compact={compact} properties={propertyRecords} onAdd={addProperty} canManage={account.role === 'Owner' || account.role === 'Manager'} />}
+          {screen === 'properties' && <PropertiesScreen compact={compact} properties={propertyRecords} onAdd={addProperty} onStatusChange={markPropertyStatus} onAddMember={addPropertyMember} onImport={importRegister} canManage={account.role === 'Owner' || account.role === 'Manager'} />}
           {screen === 'collections' && (
             <CollectionsScreen
               compact={compact}
@@ -398,7 +443,7 @@ function Topbar({ compact, screen, account }: { compact: boolean; screen: Screen
       {!compact && (
         <View style={styles.periodPill}>
           <Text style={styles.periodPillLabel}>Period</Text>
-          <Text style={styles.periodPillValue}>August 2026⌄</Text>
+          <Text style={styles.periodPillValue}>{new Intl.DateTimeFormat('en-KE', { month: 'long', year: 'numeric' }).format(new Date())}</Text>
         </View>
       )}
     </View>
@@ -420,7 +465,16 @@ function WorkspaceThemePicker({ compact }: { compact: boolean }) {
 }
 
 function OverviewScreen({ compact, payments, properties, onCollect }: { compact: boolean; payments: Payment[]; properties: Property[]; onCollect: () => void }) {
-  const collected = payments.reduce((total, payment) => total + payment.rent + payment.services + payment.deposit, 0);
+  const now = new Date();
+  const monthPayments = payments.filter((payment) => {
+    const paymentDate = new Date(payment.date);
+    return !Number.isNaN(paymentDate.getTime()) && paymentDate.getFullYear() === now.getFullYear() && paymentDate.getMonth() === now.getMonth();
+  });
+  const collected = monthPayments.reduce((total, payment) => total + payment.rent + payment.services + payment.deposit, 0);
+  const mpesaPayments = monthPayments.filter((payment) => payment.method === 'mpesa');
+  const bankPayments = monthPayments.filter((payment) => payment.method === 'bank');
+  const mpesaTotal = mpesaPayments.reduce((total, payment) => total + payment.rent + payment.services + payment.deposit, 0);
+  const bankTotal = bankPayments.reduce((total, payment) => total + payment.rent + payment.services + payment.deposit, 0);
   const expected = properties.filter((property) => property.status !== 'Vacant').reduce((total, property) => total + property.rent + property.services, 0);
   const outstanding = Math.max(expected - collected, 0);
   const occupiedCount = properties.filter((property) => property.status !== 'Vacant').length;
@@ -436,6 +490,8 @@ function OverviewScreen({ compact, payments, properties, onCollect }: { compact:
     <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
       <View style={styles.metricsGrid}>
         <MetricCard label="Collected" value={money(collected)} detail={`${collectionPercent}% of expected`} tone="green" />
+        <MetricCard label="M-Pesa total" value={money(mpesaTotal)} detail={`${mpesaPayments.length} payments this month`} tone="green" />
+        <MetricCard label="Bank total" value={money(bankTotal)} detail={`${bankPayments.length} payments this month`} tone="blue" />
         <MetricCard label="Expected" value={money(expected)} detail="Rent + service charges" tone="blue" />
         <MetricCard label="Outstanding" value={money(outstanding)} detail="Follow-up required" tone="amber" />
         <MetricCard label="Occupancy" value={`${occupancy}%`} detail={`${occupiedCount} of ${properties.length} houses occupied`} tone="plain" />
@@ -470,12 +526,12 @@ function OverviewScreen({ compact, payments, properties, onCollect }: { compact:
             </View>
             <View style={styles.legendRow}><View style={[styles.legendDot, { backgroundColor: colors.brand }]} /><Text style={styles.legendText}>Paid</Text><Text style={styles.legendNumber}>{paidCount}</Text></View>
             <View style={styles.legendRow}><View style={[styles.legendDot, { backgroundColor: colors.amber }]} /><Text style={styles.legendText}>Partial</Text><Text style={styles.legendNumber}>{partialCount}</Text></View>
-            <View style={styles.legendRow}><View style={[styles.legendDot, { backgroundColor: colors.red }]} /><Text style={styles.legendText}>Overdue</Text><Text style={styles.legendNumber}>{overdueCount}</Text></View>
+            <View style={styles.legendRow}><View style={[styles.legendDot, { backgroundColor: colors.red }]} /><Text style={styles.legendText}>Not paid</Text><Text style={styles.legendNumber}>{overdueCount}</Text></View>
           </View>
 
           {attentionProperty && <View style={[styles.sectionCard, styles.attentionCard]}>
             <Text style={styles.attentionEyebrow}>NEEDS ATTENTION</Text>
-            <Text style={styles.attentionTitle}>House {attentionProperty.houseNumber} is overdue</Text>
+            <Text style={styles.attentionTitle}>House {attentionProperty.houseNumber} is not paid</Text>
             <Text style={styles.attentionBody}>{attentionProperty.tenant} has an outstanding balance of {money(attentionProperty.rent + attentionProperty.services)}.</Text>
           </View>}
         </View>
@@ -505,7 +561,7 @@ function PaymentRow({ payment, compact }: { payment: Payment; compact: boolean }
       <View style={styles.houseBadge}><Text style={styles.houseBadgeText}>{payment.houseNumber}</Text></View>
       <View style={styles.paymentPerson}>
         <Text style={styles.paymentName}>{payment.tenant}</Text>
-        <Text style={styles.paymentMeta}>{payment.date} · {payment.reference}</Text>
+        <Text style={styles.paymentMeta}>{payment.date} · {payment.reference} · {payment.method === 'mpesa' ? 'M-Pesa' : 'Bank'}</Text>
         <Text style={styles.paymentEditor}>Recorded by {payment.recordedBy}</Text>
       </View>
       <View style={styles.paymentAmountWrap}>
@@ -518,14 +574,26 @@ function PaymentRow({ payment, compact }: { payment: Payment; compact: boolean }
 
 function StatusBadge({ status }: { status: Property['status'] }) {
   const style = status === 'Paid' ? styles.badgePaid : status === 'Partial' ? styles.badgePartial : status === 'Vacant' ? styles.badgeVacant : styles.badgeOverdue;
-  return <View style={[styles.statusBadge, style]}><Text style={[styles.statusText, status === 'Overdue' && styles.statusTextOverdue]}>{status}</Text></View>;
+  const label = status === 'Overdue' ? 'Not paid' : status;
+  return <View style={[styles.statusBadge, style]}><Text style={[styles.statusText, status === 'Overdue' && styles.statusTextOverdue]}>{label}</Text></View>;
 }
 
-function PropertiesScreen({ compact, properties, onAdd, canManage }: { compact: boolean; properties: Property[]; onAdd: (draft: Omit<Property, 'status'>) => Promise<void>; canManage: boolean }) {
+function PropertiesScreen({ compact, properties, onAdd, onStatusChange, onAddMember, onImport, canManage }: {
+  compact: boolean;
+  properties: Property[];
+  onAdd: (draft: Omit<Property, 'status'>) => Promise<void>;
+  onStatusChange: (property: Property, status: PaymentStatus) => Promise<void>;
+  onAddMember: (property: Property, fullName: string) => Promise<void>;
+  onImport: () => Promise<void>;
+  canManage: boolean;
+}) {
   const [query, setQuery] = useState('');
   const [adding, setAdding] = useState(false);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
+  const [importing, setImporting] = useState(false);
+  const [memberHouse, setMemberHouse] = useState('');
+  const [memberName, setMemberName] = useState('');
   const [draft, setDraft] = useState({ houseNumber: '', tenant: '', rent: '', services: '' });
   const filtered = properties.filter((property) => `${property.houseNumber} ${property.tenant}`.toLowerCase().includes(query.toLowerCase()));
   const updateDraft = (field: keyof typeof draft, value: string) => setDraft((current) => ({ ...current, [field]: value }));
@@ -538,6 +606,7 @@ function PropertiesScreen({ compact, properties, onAdd, canManage }: { compact: 
       await onAdd({
         houseNumber: draft.houseNumber.trim(), tenant: draft.tenant.trim(),
         rent: Number(draft.rent), services: Number(draft.services || 0),
+        members: draft.tenant.trim() ? [{ fullName: draft.tenant.trim() }] : [],
       });
       setDraft({ houseNumber: '', tenant: '', rent: '', services: '' });
       setAdding(false);
@@ -545,6 +614,24 @@ function PropertiesScreen({ compact, properties, onAdd, canManage }: { compact: 
       setFormError(caught instanceof Error ? caught.message : 'Could not add this property.');
     } finally {
       setSaving(false);
+    }
+  };
+  const runImport = async () => {
+    setFormError('');
+    setImporting(true);
+    try { await onImport(); } catch (caught) {
+      setFormError(caught instanceof Error ? caught.message : 'Could not import the workbook register.');
+    } finally { setImporting(false); }
+  };
+  const submitMember = async (property: Property) => {
+    if (!memberName.trim()) return;
+    setFormError('');
+    try {
+      await onAddMember(property, memberName.trim());
+      setMemberName('');
+      setMemberHouse('');
+    } catch (caught) {
+      setFormError(caught instanceof Error ? caught.message : 'Could not add this household member.');
     }
   };
   return (
@@ -557,10 +644,16 @@ function PropertiesScreen({ compact, properties, onAdd, canManage }: { compact: 
           placeholderTextColor="#87918D"
           style={styles.searchInput}
         />
-        {canManage && <Pressable onPress={() => setAdding((value) => !value)} style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}>
-          <Text style={styles.primaryButtonText}>{adding ? 'Close form' : '+ Add property'}</Text>
-        </Pressable>}
+        {canManage && <View style={styles.toolbarActions}>
+          <Pressable disabled={importing} onPress={runImport} style={({ pressed }) => [styles.secondaryButton, (pressed || importing) && styles.pressed]}>
+            {importing ? <ActivityIndicator color={colors.brand} /> : <Text style={styles.secondaryButtonText}>Import Githurai register</Text>}
+          </Pressable>
+          <Pressable onPress={() => setAdding((value) => !value)} style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}>
+            <Text style={styles.primaryButtonText}>{adding ? 'Close form' : '+ Add property'}</Text>
+          </Pressable>
+        </View>}
       </View>
+      {formError && !adding ? <Text style={styles.saveError}>{formError}</Text> : null}
       {adding && (
         <View style={[styles.sectionCard, styles.propertyFormCard]}>
           <View><Text style={styles.sectionTitle}>New property</Text><Text style={styles.sectionSubtitle}>Create the house and optionally assign its first tenant.</Text></View>
@@ -588,11 +681,33 @@ function PropertiesScreen({ compact, properties, onAdd, canManage }: { compact: 
             </View>
             <View style={styles.propertyDivider} />
             <Text style={styles.propertyTenant}>{property.tenant}</Text>
-            <Text style={styles.propertyTenantLabel}>{property.status === 'Vacant' ? 'Ready for occupancy' : 'Current tenant'}</Text>
+            <Text style={styles.propertyTenantLabel}>{property.status === 'Vacant' ? 'Ready for occupancy' : `${property.members.length || 1} household member${property.members.length === 1 ? '' : 's'}`}</Text>
+            {property.members.length > 0 && (
+              <View style={styles.householdList}>
+                {property.members.map((member) => <View key={member.id ?? member.fullName} style={styles.householdChip}><Text style={styles.householdChipText}>{member.fullName}</Text></View>)}
+              </View>
+            )}
             <View style={styles.propertyMoneyRow}>
               <View><Text style={styles.miniLabel}>MONTHLY RENT</Text><Text style={styles.miniValue}>{money(property.rent)}</Text></View>
               <View><Text style={styles.miniLabel}>WATER & GARBAGE</Text><Text style={styles.miniValue}>{money(property.services)}</Text></View>
             </View>
+            {canManage && property.status !== 'Vacant' && (
+              <View style={styles.statusActions}>
+                {(['Paid', 'Partial', 'Overdue'] as const).map((status) => (
+                  <Pressable key={status} onPress={() => onStatusChange(property, status)} style={[styles.statusAction, property.status === status && styles.statusActionActive]}>
+                    <Text style={[styles.statusActionText, property.status === status && styles.statusActionTextActive]}>{status === 'Overdue' ? 'Not paid' : status}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
+            {canManage && (memberHouse === property.houseNumber ? (
+              <View style={styles.memberForm}>
+                <TextInput value={memberName} onChangeText={setMemberName} placeholder="Household member name" placeholderTextColor="#87918D" style={styles.memberInput} />
+                <Pressable onPress={() => submitMember(property)} style={styles.memberSave}><Text style={styles.primaryButtonText}>Add</Text></Pressable>
+              </View>
+            ) : (
+              <Pressable onPress={() => { setMemberHouse(property.houseNumber); setMemberName(''); }} style={styles.addResidentButton}><Text style={styles.addResidentText}>+ Add household member</Text></Pressable>
+            ))}
           </View>
         ))}
         {!filtered.length && <View style={styles.emptyState}><Text style={styles.emptyTitle}>No properties found</Text><Text style={styles.emptyText}>{query ? 'Try another house number or tenant name.' : 'Create the first property to start keeping records.'}</Text></View>}
@@ -724,16 +839,20 @@ function ActivityScreen({ events, account, onSignOut, onAddMember, compact }: { 
 }
 
 function CollectionsScreen({ compact, latestPayment, properties, prefill, onSave }: { compact: boolean; latestPayment: Payment | null; properties: Property[]; prefill: ReceiptPrefill | null; onSave: (draft: CollectionDraft) => Promise<void> }) {
-  const selectedProperty = properties[0] ?? { houseNumber: '', tenant: '', rent: 0, services: 0, status: 'Vacant' as const };
-  const [form, setForm] = useState({
+  const selectedProperty = properties[0] ?? { houseNumber: '', tenant: '', rent: 0, services: 0, status: 'Vacant' as const, members: [] };
+  const [form, setForm] = useState<{
+    houseNumber: string; tenant: string; rent: string; services: string; deposit: string;
+    accountName: string; date: string; reference: string; method: PaymentMethod;
+  }>({
     houseNumber: selectedProperty.houseNumber,
     tenant: selectedProperty.tenant,
     rent: `${selectedProperty.rent}`,
     services: `${selectedProperty.services}`,
     deposit: '0',
     accountName: 'Kamau Properties',
-    date: '1 Aug 2026',
+    date: displayDate(new Date().toISOString()),
     reference: '',
+    method: 'mpesa',
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
@@ -770,9 +889,9 @@ function CollectionsScreen({ compact, latestPayment, properties, prefill, onSave
     if (!form.houseNumber.trim()) nextErrors.houseNumber = 'House number is required.';
     if (!form.tenant.trim()) nextErrors.tenant = 'Tenant name is required.';
     if (!form.rent || Number(form.rent) <= 0) nextErrors.rent = 'Enter the rent amount.';
-    if (!form.accountName.trim()) nextErrors.accountName = 'Enter the M-Pesa account name.';
+    if (!form.accountName.trim()) nextErrors.accountName = `Enter the ${form.method === 'mpesa' ? 'M-Pesa account' : 'bank account'} name.`;
     if (!form.date.trim()) nextErrors.date = 'Payment date is required.';
-    if (!form.reference.trim()) nextErrors.reference = 'Enter the M-Pesa or rent reference.';
+    if (!form.reference.trim()) nextErrors.reference = `Enter the ${form.method === 'mpesa' ? 'M-Pesa' : 'bank'} reference.`;
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length) return;
 
@@ -788,6 +907,7 @@ function CollectionsScreen({ compact, latestPayment, properties, prefill, onSave
         accountName: form.accountName.trim(),
         date: form.date.trim(),
         reference: form.reference.trim().toUpperCase(),
+        method: form.method,
       });
       update('reference', '');
     } catch (caught) {
@@ -806,6 +926,7 @@ function CollectionsScreen({ compact, latestPayment, properties, prefill, onSave
     accountName: form.accountName,
     date: form.date,
     reference: form.reference || 'Pending',
+    method: form.method,
   };
 
   return (
@@ -821,15 +942,26 @@ function CollectionsScreen({ compact, latestPayment, properties, prefill, onSave
               </View>
             </View>
 
+            <View style={styles.methodSection}>
+              <Text style={styles.fieldLabel}>Payment method</Text>
+              <View style={styles.methodPicker}>
+                {(['mpesa', 'bank'] as const).map((method) => (
+                  <Pressable key={method} onPress={() => setForm((current) => ({ ...current, method }))} style={[styles.methodChoice, form.method === method && styles.methodChoiceActive]}>
+                    <Text style={[styles.methodChoiceText, form.method === method && styles.methodChoiceTextActive]}>{method === 'mpesa' ? 'M-Pesa' : 'Bank'}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+
             <View style={styles.fieldGrid}>
               <FormField label="House number" value={form.houseNumber} onChangeText={(value) => update('houseNumber', value)} error={errors.houseNumber} placeholder="e.g. 274" />
               <FormField label="Tenant name" value={form.tenant} onChangeText={(value) => update('tenant', value)} error={errors.tenant} placeholder="Full name" />
               <FormField label="Amount to pay (rent)" value={form.rent} onChangeText={(value) => update('rent', value.replace(/[^0-9]/g, ''))} error={errors.rent} placeholder="0" keyboardType="numeric" prefix="KES" />
               <FormField label="Water & garbage" value={form.services} onChangeText={(value) => update('services', value.replace(/[^0-9]/g, ''))} placeholder="0" keyboardType="numeric" prefix="KES" />
               <FormField label="Deposit paid" value={form.deposit} onChangeText={(value) => update('deposit', value.replace(/[^0-9]/g, ''))} placeholder="0" keyboardType="numeric" prefix="KES" />
-              <FormField label="Paid-to M-Pesa name" value={form.accountName} onChangeText={(value) => update('accountName', value)} error={errors.accountName} placeholder="Account holder" />
+              <FormField label={form.method === 'mpesa' ? 'Paid-to M-Pesa name' : 'Bank / account name'} value={form.accountName} onChangeText={(value) => update('accountName', value)} error={errors.accountName} placeholder="Account holder" />
               <FormField label="Payment date" value={form.date} onChangeText={(value) => update('date', value)} error={errors.date} placeholder="e.g. 1 Aug 2026" />
-              <FormField label="Rent / M-Pesa reference" value={form.reference} onChangeText={(value) => update('reference', value)} error={errors.reference} placeholder="e.g. QH82K4D6PZ" autoCapitalize="characters" />
+              <FormField label={form.method === 'mpesa' ? 'M-Pesa reference' : 'Bank transaction reference'} value={form.reference} onChangeText={(value) => update('reference', value)} error={errors.reference} placeholder={form.method === 'mpesa' ? 'e.g. QH82K4D6PZ' : 'e.g. BANK-98342'} autoCapitalize="characters" />
             </View>
 
             <View style={styles.totalBar}>
@@ -910,12 +1042,12 @@ function InvoicePreview({ payment, saved }: { payment: CollectionDraft; saved: b
         <Text style={styles.invoiceTotal}>{money(total)}</Text>
       </View>
       <View style={styles.invoiceReference}>
-        <Text style={styles.invoiceKey}>PAYMENT REFERENCE</Text>
+        <Text style={styles.invoiceKey}>{payment.method === 'mpesa' ? 'M-PESA REFERENCE' : 'BANK REFERENCE'}</Text>
         <Text style={styles.invoiceReferenceValue}>{payment.reference || 'Pending'}</Text>
       </View>
       <View style={styles.invoiceFooter}>
         <View style={[styles.invoiceStatusDot, !saved && { backgroundColor: colors.amber }]} />
-        <Text style={styles.invoiceFooterText}>{saved ? `Paid to ${payment.accountName}` : 'Preview — save to confirm payment'}</Text>
+        <Text style={styles.invoiceFooterText}>{saved ? `${payment.method === 'mpesa' ? 'M-Pesa' : 'Bank'} · Paid to ${payment.accountName}` : 'Preview — save to confirm payment'}</Text>
       </View>
     </View>
   );
@@ -1058,6 +1190,9 @@ const createStyles = () => StyleSheet.create({
   attentionBody: { color: colors.muted, fontSize: 11, lineHeight: 17, marginTop: 5 },
   toolbar: { flexDirection: 'row', gap: 12, marginBottom: 16 },
   toolbarCompact: { flexDirection: 'column' },
+  toolbarActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  secondaryButton: { minHeight: 46, borderWidth: 1, borderColor: colors.brand, borderRadius: 12, paddingHorizontal: 15, alignItems: 'center', justifyContent: 'center' },
+  secondaryButtonText: { color: colors.brandDark, fontSize: 10, fontWeight: '800' },
   searchInput: { flex: 1, minHeight: 46, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line, borderRadius: 12, paddingHorizontal: 15, color: colors.ink, fontSize: 13 },
   propertyGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14 },
   propertyFormCard: { marginBottom: 14 },
@@ -1073,7 +1208,20 @@ const createStyles = () => StyleSheet.create({
   propertyDivider: { height: 1, backgroundColor: '#EDF0ED', marginVertical: 16 },
   propertyTenant: { color: colors.ink, fontSize: 14, fontWeight: '700' },
   propertyTenantLabel: { color: colors.muted, fontSize: 10, marginTop: 4 },
+  householdList: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 12 },
+  householdChip: { backgroundColor: colors.brandPale, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 6 },
+  householdChipText: { color: colors.brandDark, fontSize: 9, fontWeight: '700' },
   propertyMoneyRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 14, marginTop: 22 },
+  statusActions: { flexDirection: 'row', backgroundColor: colors.canvas, borderRadius: 11, padding: 3, marginTop: 16 },
+  statusAction: { flex: 1, alignItems: 'center', borderRadius: 8, paddingVertical: 8 },
+  statusActionActive: { backgroundColor: colors.surface, shadowColor: colors.brandDark, shadowOpacity: 0.08, shadowRadius: 4, elevation: 1 },
+  statusActionText: { color: colors.muted, fontSize: 8, fontWeight: '700' },
+  statusActionTextActive: { color: colors.brandDark },
+  addResidentButton: { marginTop: 12, alignSelf: 'flex-start', paddingVertical: 6 },
+  addResidentText: { color: colors.brand, fontSize: 9, fontWeight: '800' },
+  memberForm: { flexDirection: 'row', gap: 7, marginTop: 12 },
+  memberInput: { flex: 1, minHeight: 39, backgroundColor: colors.canvas, borderWidth: 1, borderColor: colors.line, borderRadius: 9, paddingHorizontal: 10, color: colors.ink, fontSize: 10 },
+  memberSave: { minWidth: 58, backgroundColor: colors.brand, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
   miniLabel: { color: '#929C98', fontSize: 8, fontWeight: '800', letterSpacing: 0.7 },
   miniValue: { color: colors.ink, fontSize: 12, fontWeight: '800', marginTop: 5 },
   accountSummary: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line, borderRadius: 18, padding: 17, marginBottom: 14 },
@@ -1135,6 +1283,12 @@ const createStyles = () => StyleSheet.create({
   formStep: { width: 39, height: 39, borderRadius: 12, backgroundColor: colors.brandPale, alignItems: 'center', justifyContent: 'center' },
   formStepText: { color: colors.brand, fontSize: 12, fontWeight: '900' },
   fieldGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 13 },
+  methodSection: { marginBottom: 17 },
+  methodPicker: { flexDirection: 'row', alignSelf: 'flex-start', backgroundColor: colors.canvas, padding: 4, borderRadius: 12 },
+  methodChoice: { minWidth: 105, alignItems: 'center', paddingHorizontal: 17, paddingVertical: 10, borderRadius: 9 },
+  methodChoiceActive: { backgroundColor: colors.brand, shadowColor: colors.brandDark, shadowOpacity: 0.12, shadowRadius: 6, elevation: 2 },
+  methodChoiceText: { color: colors.muted, fontSize: 10, fontWeight: '800' },
+  methodChoiceTextActive: { color: colors.surface },
   fieldWrap: { flexGrow: 1, flexBasis: 230, minWidth: 190 },
   fieldLabel: { color: colors.ink, fontSize: 10, fontWeight: '700', marginBottom: 7 },
   inputFrame: { height: 47, flexDirection: 'row', alignItems: 'center', backgroundColor: '#FAFBF9', borderWidth: 1, borderColor: colors.line, borderRadius: 11, paddingHorizontal: 12 },

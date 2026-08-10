@@ -11,6 +11,16 @@ export type PaymentRecordInput = {
   accountName: string;
   date: string;
   reference: string;
+  method: 'mpesa' | 'bank';
+  status?: 'paid' | 'partial';
+};
+
+export type StoredHouseholdMember = {
+  id: string;
+  full_name: string;
+  phone: string | null;
+  is_primary: boolean;
+  active: boolean;
 };
 
 export type StoredPayment = {
@@ -23,6 +33,7 @@ export type StoredPayment = {
   paid_to_name: string;
   payment_date: string;
   payment_reference: string;
+  payment_method: 'mpesa' | 'bank';
   status: 'paid' | 'partial' | 'overdue';
   created_at: string;
   creator: { full_name: string } | Array<{ full_name: string }> | null;
@@ -46,7 +57,35 @@ export type StoredProperty = {
   monthly_rent: number | string;
   service_charge: number | string;
   status: 'paid' | 'partial' | 'overdue' | 'vacant';
+  household_members: StoredHouseholdMember[] | null;
 };
+
+const githuraiRegister = [
+  { house: 'M1', members: ['Seline Apondi'], rent: 4400, status: 'overdue' },
+  { house: 'M2', members: ['Alphine Jepngetich'], rent: 4400, status: 'overdue' },
+  { house: 'M3', members: ['Ramadan Limo Kurgat'], rent: 5200, status: 'overdue' },
+  { house: 'M4', members: ['Grace Muthoni'], rent: 5350, status: 'paid' },
+  { house: 'M5', members: ['Beatrice Njuhi Ndegwa'], rent: 8400, status: 'overdue' },
+  { house: 'M6', members: ['Susan Madangi'], rent: 5200, status: 'overdue' },
+  { house: 'M7', members: ['Joan Muthoni Mwangi'], rent: 5200, status: 'overdue' },
+  { house: 'M8', members: ['Mary Wanjiru Wanjiku'], rent: 8400, status: 'paid' },
+  { house: 'M9', members: ['Charity Ruheni'], rent: 4400, status: 'overdue' },
+  { house: 'M10', members: ['Henry Jumah Ouma'], rent: 7400, status: 'overdue' },
+  { house: 'M11', members: ['Alex Maingi Maithya'], rent: 5400, status: 'overdue' },
+  { house: 'M12', members: ['Kelvin Katua Mutiso'], rent: 5200, status: 'overdue' },
+  { house: 'N14', members: ['Rehab Wanjiru'], rent: 6400, status: 'overdue' },
+  { house: 'N15', members: ['Rachel Purity Mukami', 'Emmanuel Simiyu'], rent: 5200, status: 'overdue' },
+  { house: 'N16', members: ['Emmanuel Simiyu'], rent: 5200, status: 'partial' },
+  { house: 'N17', members: ['Wilfred Chau Ngugi'], rent: 5400, status: 'overdue' },
+  { house: 'N18', members: ['Joseph Gicharu Njuguna', 'Veronica'], rent: 8400, status: 'paid' },
+  { house: 'N19', members: ['Julias Barakachi'], rent: 5200, status: 'paid' },
+  { house: 'N20', members: ['Kelvin Fundi Muthee'], rent: 5200, status: 'paid' },
+  { house: 'N21', members: ['Moses Wendo Ngolanye'], rent: 8400, status: 'paid' },
+  { house: 'N22', members: ['Mary Wambui Wanjiru', 'Mary Njoki Kamau'], rent: 5200, status: 'overdue' },
+  { house: 'N23', members: ['John Wanyoike Wairegi'], rent: 7400, status: 'overdue' },
+  { house: 'N24', members: ['Denis Munene Gituma'], rent: 5200, status: 'overdue' },
+  { house: 'N25', members: ['Chris', 'Agnes Mukina Ngure'], rent: 5200, status: 'overdue' },
+] as const;
 
 const toIsoDate = (input: string) => {
   const parsed = new Date(input);
@@ -75,7 +114,8 @@ export async function savePaymentRecord(input: PaymentRecordInput) {
     paid_to_name: input.accountName,
     payment_date: toIsoDate(input.date),
     payment_reference: input.reference,
-    status: 'paid',
+    payment_method: input.method,
+    status: input.status ?? 'paid',
     created_by: input.actorId,
     updated_by: input.actorId,
   }).select('id').single();
@@ -105,6 +145,17 @@ export async function savePropertyRecord(input: {
     updated_by: input.actorId,
   }).select('id').single();
   if (error) throw error;
+  if (occupied) {
+    const { error: memberError } = await supabase.from('household_members').insert({
+      organization_id: input.organizationId,
+      property_id: data.id,
+      full_name: input.tenant.trim(),
+      is_primary: true,
+      created_by: input.actorId,
+      updated_by: input.actorId,
+    });
+    if (memberError) throw memberError;
+  }
   return data.id as string;
 }
 
@@ -123,11 +174,83 @@ export async function fetchProperties(organizationId: string) {
   if (!supabase) return [] as StoredProperty[];
   const { data, error } = await supabase
     .from('properties')
-    .select('id, house_number, tenant_name, monthly_rent, service_charge, status')
+    .select('id, house_number, tenant_name, monthly_rent, service_charge, status, household_members(id, full_name, phone, is_primary, active)')
     .eq('organization_id', organizationId)
     .order('house_number');
   if (error) throw error;
   return (data ?? []) as unknown as StoredProperty[];
+}
+
+export async function updatePropertyPaymentStatus(propertyId: string, status: 'paid' | 'partial' | 'overdue') {
+  if (!supabase) throw new Error('The database is not configured.');
+  const { error } = await supabase.from('properties').update({ status }).eq('id', propertyId);
+  if (error) throw error;
+}
+
+export async function addHouseholdMember(input: {
+  organizationId: string;
+  propertyId: string;
+  actorId: string;
+  fullName: string;
+  phone?: string;
+}) {
+  if (!supabase) throw new Error('The database is not configured.');
+  const { data, error } = await supabase.from('household_members').insert({
+    organization_id: input.organizationId,
+    property_id: input.propertyId,
+    full_name: input.fullName.trim(),
+    phone: input.phone?.trim() || null,
+    created_by: input.actorId,
+    updated_by: input.actorId,
+  }).select('id, full_name, phone, is_primary, active').single();
+  if (error) throw error;
+  return data as StoredHouseholdMember;
+}
+
+export async function importGithuraiRegister(organizationId: string, actorId: string) {
+  if (!supabase) throw new Error('The database is not configured.');
+
+  const { data: existing, error: existingError } = await supabase.from('properties')
+    .select('id, house_number')
+    .eq('organization_id', organizationId)
+    .in('house_number', githuraiRegister.map((entry) => entry.house));
+  if (existingError) throw existingError;
+  const existingByHouse = new Map((existing ?? []).map((property) => [property.house_number, property.id]));
+
+  for (const entry of githuraiRegister) {
+    const existingId = existingByHouse.get(entry.house);
+    const propertyValues = {
+      tenant_name: entry.members.join(' + '),
+      monthly_rent: entry.rent,
+      service_charge: 0,
+      status: entry.status,
+      updated_by: actorId,
+    };
+    const propertyRequest = existingId
+      ? supabase.from('properties').update(propertyValues).eq('id', existingId).select('id').single()
+      : supabase.from('properties').insert({
+          ...propertyValues,
+          organization_id: organizationId,
+          house_number: entry.house,
+          created_by: actorId,
+        }).select('id').single();
+    const { data: property, error: propertyError } = await propertyRequest;
+    if (propertyError) throw propertyError;
+
+    const memberRows = entry.members.map((fullName, index) => ({
+      organization_id: organizationId,
+      property_id: property.id,
+      full_name: fullName,
+      is_primary: index === 0,
+      created_by: actorId,
+      updated_by: actorId,
+    }));
+    const { error: memberError } = await supabase.from('household_members')
+      .upsert(memberRows, { onConflict: 'property_id,full_name', ignoreDuplicates: true });
+    if (memberError) throw memberError;
+  }
+
+  return fetchProperties(organizationId);
 }
 
 export async function fetchAuditEvents(organizationId: string) {

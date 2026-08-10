@@ -14,6 +14,8 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.rayfrank.rentflow",
+      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",

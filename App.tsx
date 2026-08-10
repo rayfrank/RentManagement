@@ -314,8 +314,10 @@ function RentFlowApp() {
   const importRegister = async () => {
     if (!account.organizationId || account.demo) throw new Error('Sign in to a live owner account to import the workbook register.');
     const records = await importGithuraiRegister(account.organizationId, account.id);
+    const storedPayments = await fetchPayments(account.organizationId);
     setPropertyRecords(records.map(propertyFromRecord));
-    setNotice('Githurai register imported: 24 houses and all listed household members.');
+    setPayments(storedPayments.map(paymentFromRecord));
+    setNotice('Githurai register imported with KES 13,600 M-Pesa and KES 39,810 bank opening totals.');
   };
 
   const useScannedReceipt = (prefill: ReceiptPrefill) => {
@@ -358,6 +360,7 @@ function RentFlowApp() {
           {screen === 'collections' && (
             <CollectionsScreen
               compact={compact}
+              payments={payments}
               properties={propertyRecords}
               prefill={receiptPrefill}
               latestPayment={latestPayment}
@@ -838,7 +841,7 @@ function ActivityScreen({ events, account, onSignOut, onAddMember, compact }: { 
   );
 }
 
-function CollectionsScreen({ compact, latestPayment, properties, prefill, onSave }: { compact: boolean; latestPayment: Payment | null; properties: Property[]; prefill: ReceiptPrefill | null; onSave: (draft: CollectionDraft) => Promise<void> }) {
+function CollectionsScreen({ compact, latestPayment, payments, properties, prefill, onSave }: { compact: boolean; latestPayment: Payment | null; payments: Payment[]; properties: Property[]; prefill: ReceiptPrefill | null; onSave: (draft: CollectionDraft) => Promise<void> }) {
   const selectedProperty = properties[0] ?? { houseNumber: '', tenant: '', rent: 0, services: 0, status: 'Vacant' as const, members: [] };
   const [form, setForm] = useState<{
     houseNumber: string; tenant: string; rent: string; services: string; deposit: string;
@@ -857,6 +860,12 @@ function CollectionsScreen({ compact, latestPayment, properties, prefill, onSave
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
+  const now = new Date();
+  const currentPayments = payments.filter((payment) => {
+    const paymentDate = new Date(payment.date);
+    return !Number.isNaN(paymentDate.getTime()) && paymentDate.getFullYear() === now.getFullYear() && paymentDate.getMonth() === now.getMonth();
+  });
+  const channelTotal = (method: PaymentMethod) => currentPayments.filter((payment) => payment.method === method).reduce((sum, payment) => sum + payment.rent + payment.services + payment.deposit, 0);
 
   useEffect(() => {
     if (!prefill) return;
@@ -932,6 +941,11 @@ function CollectionsScreen({ compact, latestPayment, properties, prefill, onSave
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flexOne}>
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <View style={styles.channelSummary}>
+          <View style={[styles.channelTotalCard, styles.channelMpesaCard]}><Text style={styles.channelLabel}>M-PESA TOTAL</Text><Text style={styles.channelValue}>{money(channelTotal('mpesa'))}</Text><Text style={styles.channelDetail}>This month</Text></View>
+          <View style={[styles.channelTotalCard, styles.channelBankCard]}><Text style={styles.channelLabel}>BANK TOTAL</Text><Text style={styles.channelValue}>{money(channelTotal('bank'))}</Text><Text style={styles.channelDetail}>This month</Text></View>
+          <View style={styles.channelTotalCard}><Text style={styles.channelLabel}>COMBINED</Text><Text style={styles.channelValue}>{money(channelTotal('mpesa') + channelTotal('bank'))}</Text><Text style={styles.channelDetail}>{currentPayments.length} payments</Text></View>
+        </View>
         <View style={[styles.collectionColumns, compact && styles.columnStack]}>
           <View style={[styles.sectionCard, styles.collectionForm]}>
             <View style={styles.formHeading}>
@@ -1276,6 +1290,13 @@ const createStyles = () => StyleSheet.create({
   auditEntityBadge: { backgroundColor: colors.canvas, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 5 },
   auditEntityText: { color: colors.muted, fontSize: 8, fontWeight: '700' },
   collectionColumns: { flexDirection: 'row', alignItems: 'flex-start', gap: 18 },
+  channelSummary: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 16 },
+  channelTotalCard: { flexGrow: 1, flexBasis: 190, minWidth: 170, backgroundColor: colors.surface, borderWidth: 1, borderColor: '#FFFFFFC7', borderRadius: 18, padding: 16 },
+  channelMpesaCard: { backgroundColor: colors.brandPale },
+  channelBankCard: { backgroundColor: colors.bluePale },
+  channelLabel: { color: colors.muted, fontSize: 8, fontWeight: '900', letterSpacing: 0.8 },
+  channelValue: { color: colors.ink, fontSize: 19, fontWeight: '900', marginTop: 9 },
+  channelDetail: { color: colors.muted, fontSize: 9, marginTop: 3 },
   collectionForm: { flex: 1.3, minWidth: 0 },
   invoiceColumn: { flex: 0.7, minWidth: 280 },
   previewLabel: { color: colors.muted, fontSize: 9, fontWeight: '800', letterSpacing: 1.2, marginBottom: 10 },

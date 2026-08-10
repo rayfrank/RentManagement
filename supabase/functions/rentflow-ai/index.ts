@@ -226,7 +226,7 @@ async function answerReport(client: ReturnType<typeof createClient>, workspace: 
 
   const [{ data: properties }, { data: payments }, { data: audits }, { data: alerts }] = await Promise.all([
     client.from('properties').select('house_number, tenant_name, monthly_rent, service_charge, status').eq('organization_id', workspace.organizationId).limit(500),
-    client.from('payments').select('house_number, tenant_name, rent_amount, service_amount, deposit_amount, payment_date, payment_reference, status').eq('organization_id', workspace.organizationId).order('payment_date', { ascending: false }).limit(500),
+    client.from('payments').select('house_number, tenant_name, rent_amount, service_amount, deposit_amount, payment_date, payment_reference, payment_method, status').eq('organization_id', workspace.organizationId).order('payment_date', { ascending: false }).limit(500),
     client.from('audit_logs').select('action, entity_type, changed_fields, occurred_at, actor:profiles!audit_logs_actor_id_fkey(full_name), old_values, new_values').eq('organization_id', workspace.organizationId).order('occurred_at', { ascending: false }).limit(100),
     client.from('fraud_alerts').select('severity, alert_type, title, details, status, created_at').eq('organization_id', workspace.organizationId).order('created_at', { ascending: false }).limit(100),
   ]);
@@ -244,7 +244,7 @@ async function answerReport(client: ReturnType<typeof createClient>, workspace: 
       required: ['answer', 'supporting_facts', 'caveat'],
     },
   };
-  const input = `You are RentFlow's read-only reporting assistant. Answer only from the supplied JSON. Never claim you changed records. If the data is insufficient, say so. Use KES for money.\n\nQuestion: ${question}\n\nWorkspace data: ${JSON.stringify(snapshot)}`;
+  const input = `You are RentFlow's friendly AI assistant. Respond naturally and clearly, using only facts from the supplied workspace JSON. You can calculate totals, including separate M-Pesa and bank totals using payment_method. Never claim you changed records. If the data is insufficient, say so. Use KES for money.\n\nQuestion: ${question}\n\nWorkspace data: ${JSON.stringify(snapshot)}`;
   const ai = await callOpenAI(input, format);
   return { ...JSON.parse(ai.text), model: ai.model };
 }

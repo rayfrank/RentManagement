@@ -87,6 +87,11 @@ const githuraiRegister = [
   { house: 'N25', members: ['Chris', 'Agnes Mukina Ngure'], rent: 5200, status: 'overdue' },
 ] as const;
 
+const githuraiOpeningTotals = [
+  { method: 'mpesa', amount: 13600, reference: 'GITHURAI-AUG-2026-MPESA', accountName: 'Githurai M-Pesa total' },
+  { method: 'bank', amount: 39810, reference: 'GITHURAI-AUG-2026-BANK', accountName: 'Githurai bank total' },
+] as const;
+
 const toIsoDate = (input: string) => {
   const parsed = new Date(input);
   if (Number.isNaN(parsed.getTime())) return new Date().toISOString().slice(0, 10);
@@ -248,6 +253,33 @@ export async function importGithuraiRegister(organizationId: string, actorId: st
     const { error: memberError } = await supabase.from('household_members')
       .upsert(memberRows, { onConflict: 'property_id,full_name', ignoreDuplicates: true });
     if (memberError) throw memberError;
+  }
+
+  const { data: existingTotals, error: totalsLookupError } = await supabase.from('payments')
+    .select('payment_reference')
+    .eq('organization_id', organizationId)
+    .in('payment_reference', githuraiOpeningTotals.map((total) => total.reference));
+  if (totalsLookupError) throw totalsLookupError;
+  const existingReferences = new Set((existingTotals ?? []).map((payment) => payment.payment_reference));
+  const missingTotals = githuraiOpeningTotals.filter((total) => !existingReferences.has(total.reference)).map((total) => ({
+    organization_id: organizationId,
+    property_id: null,
+    house_number: 'ALL',
+    tenant_name: 'August 2026 workbook opening total',
+    rent_amount: total.amount,
+    service_amount: 0,
+    deposit_amount: 0,
+    paid_to_name: total.accountName,
+    payment_date: '2026-08-01',
+    payment_reference: total.reference,
+    payment_method: total.method,
+    status: 'paid',
+    created_by: actorId,
+    updated_by: actorId,
+  }));
+  if (missingTotals.length) {
+    const { error: totalsError } = await supabase.from('payments').insert(missingTotals);
+    if (totalsError) throw totalsError;
   }
 
   return fetchProperties(organizationId);

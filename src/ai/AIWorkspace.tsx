@@ -52,11 +52,11 @@ export function AIWorkspace({ compact, account, properties, onUseReceipt }: {
   const { palette: activePalette } = useTheme();
   Object.assign(palette, activePalette);
   styles = createStyles();
-  const [tab, setTab] = useState<Tab>('scanner');
+  const [tab, setTab] = useState<Tab>('ask');
   const tabs: Array<{ id: Tab; label: string; symbol: string }> = [
+    { id: 'ask', label: 'AI assistant', symbol: 'AI' },
     { id: 'scanner', label: 'M-Pesa scanner', symbol: '▣' },
     { id: 'reminders', label: 'Reminders', symbol: '✦' },
-    { id: 'ask', label: 'Ask RentFlow', symbol: '⌕' },
     { id: 'alerts', label: 'Fraud alerts', symbol: '!' },
   ];
 
@@ -65,8 +65,8 @@ export function AIWorkspace({ compact, account, properties, onUseReceipt }: {
       <View style={styles.safetyBanner}>
         <View style={styles.safetyMark}><Text style={styles.safetyMarkText}>AI</Text></View>
         <View style={styles.safetyCopy}>
-          <Text style={styles.safetyTitle}>Suggestion-first AI</Text>
-          <Text style={styles.safetyText}>RentFlow never changes a financial record from AI output without your confirmation.</Text>
+          <Text style={styles.safetyTitle}>Your RentFlow AI assistant</Text>
+          <Text style={styles.safetyText}>Ask naturally about rent, tenants, M-Pesa, bank payments, balances, or activity. AI answers without changing records.</Text>
         </View>
       </View>
 
@@ -249,10 +249,10 @@ function ReportingPanel() {
 
   return (
     <View style={styles.card}>
-      <Text style={styles.cardTitle}>Ask RentFlow</Text>
-      <Text style={styles.cardSubtitle}>A read-only assistant for payments, properties, audit history, and alerts.</Text>
+      <Text style={styles.cardTitle}>RentFlow AI assistant</Text>
+      <Text style={styles.cardSubtitle}>Chat normally about payments, properties, tenants, audit history, and alerts.</Text>
       <View style={styles.suggestionWrap}>{suggestions.map((item) => <Pressable key={item} onPress={() => ask(item)} style={styles.suggestion}><Text style={styles.suggestionText}>{item}</Text></Pressable>)}</View>
-      <TextInput value={question} onChangeText={setQuestion} multiline placeholder="Ask a question about your records…" placeholderTextColor="#97A19D" style={styles.askInput} />
+      <TextInput value={question} onChangeText={setQuestion} multiline placeholder="Ask anything about your rent records…" placeholderTextColor="#97A19D" style={styles.askInput} />
       <Pressable disabled={busy} onPress={() => ask()} style={({ pressed }) => [styles.primaryButton, (pressed || busy) && styles.pressed]}>{busy ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.primaryButtonText}>Ask securely</Text>}</Pressable>
       {error ? <ErrorBox message={error} /> : null}
       {answer ? <View style={styles.answerCard}><Text style={styles.answerText}>{answer.answer}</Text>{answer.supporting_facts.map((fact) => <View key={fact} style={styles.factRow}><View style={styles.factDot} /><Text style={styles.factText}>{fact}</Text></View>)}{answer.caveat ? <Text style={styles.caveat}>{answer.caveat}</Text> : null}</View> : null}

@@ -75,8 +75,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     Promise.all([AsyncStorage.getItem(STORAGE_KEY), AsyncStorage.getItem(TRANSPARENCY_STORAGE_KEY)]).then(([savedTheme, savedTransparency]) => {
       if (savedTheme && savedTheme in themes) setThemeState(savedTheme as ThemeName);
-      const parsedTransparency = Number(savedTransparency);
-      if (Number.isFinite(parsedTransparency)) setTransparencyState(Math.min(0.95, Math.max(0.35, parsedTransparency)));
+      if (savedTransparency !== null) {
+        const parsedTransparency = Number(savedTransparency);
+        if (Number.isFinite(parsedTransparency)) setTransparencyState(Math.min(0.95, Math.max(0.35, parsedTransparency)));
+      }
     }).catch(() => undefined);
   }, []);
 

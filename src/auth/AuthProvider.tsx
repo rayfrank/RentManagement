@@ -1,5 +1,6 @@
 import type { User } from '@supabase/supabase-js';
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from 'react';
+import { Platform } from 'react-native';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 
 export type AccountRole = 'Owner' | 'Manager' | 'Collector' | 'Viewer';
@@ -19,13 +20,24 @@ type AuthContextValue = {
   account: Account | null;
   loading: boolean;
   configured: boolean;
+  passwordRecovery: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (fullName: string, email: string, password: string) => Promise<AuthResult>;
+  requestPasswordReset: (email: string) => Promise<void>;
+  completePasswordReset: (password: string) => Promise<void>;
+  cancelPasswordRecovery: () => Promise<void>;
   signOut: () => Promise<void>;
   continueInDemo: () => void;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+const authRedirectUrl = (process.env.EXPO_PUBLIC_AUTH_REDIRECT_URL?.trim()
+  || 'https://rayfrank.github.io/RentManagement/').replace(/\/?$/, '/');
+
+const clearAuthQuery = () => {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+  window.history.replaceState({}, document.title, window.location.pathname);
+};
 
 const accountFromUser = async (user: User): Promise<Account> => {
   const base: Account = {
@@ -55,6 +67,7 @@ const accountFromUser = async (user: User): Promise<Account> => {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [account, setAccount] = useState<Account | null>(null);
   const [loading, setLoading] = useState(isSupabaseConfigured);
+  const [passwordRecovery, setPasswordRecovery] = useState(false);
 
   useEffect(() => {
     if (!supabase) return;
@@ -63,12 +76,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     supabase.auth.getSession().then(async ({ data }) => {
       if (active) {
         setAccount(data.session?.user ? await accountFromUser(data.session.user) : null);
+        if (data.session && Platform.OS === 'web' && typeof window !== 'undefined') {
+          setPasswordRecovery(new URLSearchParams(window.location.search).get('auth') === 'recovery');
+        }
         setLoading(false);
       }
     });
 
-    const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: subscription } = supabase.auth.onAuthStateChange((event, session) => {
       if (!active) return;
+      if (event === 'PASSWORD_RECOVERY') setPasswordRecovery(true);
       if (!session?.user) {
         setAccount(null);
         return;
@@ -90,6 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     account,
     loading,
     configured: isSupabaseConfigured,
+    passwordRecovery,
     signIn: async (email, password) => {
       if (!supabase) throw new Error('Connect the database before creating live accounts.');
       const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
@@ -100,10 +118,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { data, error } = await supabase.auth.signUp({
         email: email.trim(),
         password,
-        options: { data: { full_name: fullName.trim(), role: 'Owner' } },
+        options: {
+          emailRedirectTo: `${authRedirectUrl}?auth=confirmed`,
+          data: { full_name: fullName.trim(), role: 'Owner' },
+        },
       });
       if (error) throw error;
       return { requiresEmailVerification: !data.session };
+    },
+    requestPasswordReset: async (email) => {
+      if (!supabase) throw new Error('Connect the database before resetting a password.');
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: `${authRedirectUrl}?auth=recovery`,
+      });
+      if (error) throw error;
+    },
+    completePasswordReset: async (password) => {
+      if (!supabase) throw new Error('Connect the database before resetting a password.');
+      const { error } = await supabase.auth.updateUser({ password });
+      if (error) throw error;
+      setPasswordRecovery(false);
+      clearAuthQuery();
+    },
+    cancelPasswordRecovery: async () => {
+      setPasswordRecovery(false);
+      clearAuthQuery();
+      if (supabase) await supabase.auth.signOut();
     },
     signOut: async () => {
       if (account?.demo || !supabase) {
@@ -112,6 +152,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
+      setPasswordRecovery(false);
+      clearAuthQuery();
     },
     continueInDemo: () => setAccount({
       id: 'demo-owner',
@@ -120,7 +162,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       role: 'Owner',
       demo: true,
     }),
-  }), [account, loading]);
+  }), [account, loading, passwordRecovery]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

@@ -17,6 +17,7 @@ import { AuthProvider, type Account, useAuth } from './src/auth/AuthProvider';
 import { AuthScreen } from './src/auth/AuthScreen';
 import { AIWorkspace, type ReceiptPrefill } from './src/ai/AIWorkspace';
 import { addOrganizationMember, fetchAuditEvents, fetchPayments, fetchProperties, savePaymentRecord, savePropertyRecord, type StoredAuditEvent, type StoredPayment, type StoredProperty } from './src/data/records';
+import { ThemeProvider, themes, type ThemeName, type ThemePalette, useTheme } from './src/theme/ThemeProvider';
 
 type Screen = 'overview' | 'properties' | 'collections' | 'ai' | 'activity';
 type PaymentStatus = 'Paid' | 'Partial' | 'Overdue';
@@ -58,7 +59,7 @@ type AuditEvent = {
   occurredAt: string;
 };
 
-const colors = {
+const colors: ThemePalette = {
   ink: '#172622',
   muted: '#687670',
   canvas: '#F4F6F1',
@@ -72,6 +73,8 @@ const colors = {
   red: '#B84A43',
   redPale: '#FBE7E5',
   bluePale: '#E4EEF9',
+  glowOne: '#A9E5CA',
+  glowTwo: '#D7E7A8',
 };
 
 const demoProperties: Property[] = [
@@ -156,13 +159,16 @@ const propertyFromRecord = (record: StoredProperty): Property => ({
 });
 
 export default function App() {
-  return <AuthProvider><RentFlowApp /></AuthProvider>;
+  return <ThemeProvider><AuthProvider><RentFlowApp /></AuthProvider></ThemeProvider>;
 }
 
 function RentFlowApp() {
   const { width } = useWindowDimensions();
   const compact = width < 840;
-  const { account, loading, signOut } = useAuth();
+  const { palette } = useTheme();
+  Object.assign(colors, palette);
+  styles = createStyles();
+  const { account, loading, passwordRecovery, signOut } = useAuth();
   const [screen, setScreen] = useState<Screen>('overview');
   const [payments, setPayments] = useState(initialPayments);
   const [propertyRecords, setPropertyRecords] = useState(demoProperties);
@@ -202,7 +208,7 @@ function RentFlowApp() {
     return <View style={styles.loadingPage}><ActivityIndicator size="large" color={colors.brand} /></View>;
   }
 
-  if (!account) return <AuthScreen />;
+  if (passwordRecovery || !account) return <AuthScreen />;
 
   const addPayment = async (draft: CollectionDraft) => {
     const liveId = account.organizationId && !account.demo
@@ -275,6 +281,10 @@ function RentFlowApp() {
   return (
     <SafeAreaView style={styles.app}>
       <StatusBar style="dark" />
+      <View pointerEvents="none" style={styles.appAmbient}>
+        <View style={[styles.appGlow, styles.appGlowOne]} />
+        <View style={[styles.appGlow, styles.appGlowTwo]} />
+      </View>
       <View style={[styles.shell, compact && styles.shellCompact]}>
         {!compact && <Sidebar active={screen} onNavigate={setScreen} account={account} onSignOut={signOut} />}
 
@@ -380,12 +390,27 @@ function Topbar({ compact, screen, account }: { compact: boolean; screen: Screen
         <Text style={[styles.pageTitle, compact && styles.pageTitleCompact]}>{titles[screen][0]}</Text>
         <Text style={styles.pageSubtitle}>{titles[screen][1]}</Text>
       </View>
+      <WorkspaceThemePicker compact={compact} />
       {!compact && (
         <View style={styles.periodPill}>
           <Text style={styles.periodPillLabel}>Period</Text>
           <Text style={styles.periodPillValue}>August 2026⌄</Text>
         </View>
       )}
+    </View>
+  );
+}
+
+function WorkspaceThemePicker({ compact }: { compact: boolean }) {
+  const { theme, setTheme } = useTheme();
+  return (
+    <View style={styles.workspaceThemePicker}>
+      {(Object.keys(themes) as ThemeName[]).map((name) => (
+        <Pressable key={name} accessibilityLabel={`Use ${themes[name].label} theme`} onPress={() => setTheme(name)} style={[styles.workspaceThemeChoice, theme === name && styles.workspaceThemeChoiceActive]}>
+          <View style={[styles.workspaceThemeDot, { backgroundColor: themes[name].palette.brand }]} />
+          {!compact && <Text style={[styles.workspaceThemeText, theme === name && styles.workspaceThemeTextActive]}>{themes[name].label}</Text>}
+        </Pressable>
+      ))}
     </View>
   );
 }
@@ -922,14 +947,18 @@ function BottomNavItem({ label, symbol, selected, onPress }: { label: string; sy
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = () => StyleSheet.create({
   flexOne: { flex: 1 },
   loadingPage: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.canvas },
   app: { flex: 1, backgroundColor: colors.canvas },
+  appAmbient: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, overflow: 'hidden' },
+  appGlow: { position: 'absolute', width: 430, height: 430, borderRadius: 215, opacity: 0.28 },
+  appGlowOne: { backgroundColor: colors.glowOne, right: -190, top: -180 },
+  appGlowTwo: { backgroundColor: colors.glowTwo, left: '22%', bottom: -310 },
   shell: { flex: 1, flexDirection: 'row' },
   shellCompact: { paddingBottom: 70 },
   main: { flex: 1, minWidth: 0 },
-  sidebar: { width: 244, paddingHorizontal: 22, paddingVertical: 26, backgroundColor: colors.surface, borderRightWidth: 1, borderRightColor: colors.line },
+  sidebar: { width: 244, paddingHorizontal: 22, paddingVertical: 26, backgroundColor: colors.surface, borderRightWidth: 1, borderRightColor: '#FFFFFFB8', shadowColor: colors.brandDark, shadowOpacity: 0.06, shadowRadius: 24, elevation: 4 },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   brandMark: { width: 38, height: 38, borderRadius: 12, backgroundColor: colors.brand, alignItems: 'center', justifyContent: 'center' },
   brandMarkText: { color: colors.surface, fontSize: 21, fontWeight: '800' },
@@ -959,6 +988,12 @@ const styles = StyleSheet.create({
   pageTitle: { color: colors.ink, fontSize: 27, fontWeight: '800', letterSpacing: -0.8, marginTop: 6 },
   pageTitleCompact: { fontSize: 23, marginTop: 20 },
   pageSubtitle: { color: colors.muted, fontSize: 13, lineHeight: 19 },
+  workspaceThemePicker: { flexDirection: 'row', alignItems: 'center', gap: 4, padding: 4, borderRadius: 999, backgroundColor: '#FFFFFF91', borderWidth: 1, borderColor: '#FFFFFFD1' },
+  workspaceThemeChoice: { flexDirection: 'row', alignItems: 'center', gap: 5, minHeight: 30, paddingHorizontal: 8, borderRadius: 999 },
+  workspaceThemeChoiceActive: { backgroundColor: '#FFFFFFE8', shadowColor: colors.brandDark, shadowOpacity: 0.09, shadowRadius: 6, elevation: 2 },
+  workspaceThemeDot: { width: 7, height: 7, borderRadius: 4 },
+  workspaceThemeText: { color: colors.muted, fontSize: 8, fontWeight: '800' },
+  workspaceThemeTextActive: { color: colors.ink },
   periodPill: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line, borderRadius: 13, paddingHorizontal: 16, paddingVertical: 10, minWidth: 162 },
   periodPillLabel: { color: colors.muted, fontSize: 9, fontWeight: '700', letterSpacing: 0.8 },
   periodPillValue: { color: colors.ink, fontSize: 13, fontWeight: '700', marginTop: 3 },
@@ -968,7 +1003,7 @@ const styles = StyleSheet.create({
   noticeClose: { color: colors.brandDark, fontSize: 21, lineHeight: 21 },
   scrollContent: { paddingHorizontal: 38, paddingBottom: 50 },
   metricsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 14 },
-  metricCard: { flexGrow: 1, flexBasis: 210, minWidth: 180, borderRadius: 18, padding: 18, borderWidth: 1, borderColor: '#E2E7E1' },
+  metricCard: { flexGrow: 1, flexBasis: 210, minWidth: 180, borderRadius: 22, padding: 18, borderWidth: 1, borderColor: '#FFFFFFC7', shadowColor: colors.brandDark, shadowOpacity: 0.06, shadowRadius: 15, shadowOffset: { width: 0, height: 8 }, elevation: 2 },
   metricTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   metricLabel: { color: colors.muted, fontSize: 12, fontWeight: '600' },
   metricDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#A6B2AD' },
@@ -978,7 +1013,7 @@ const styles = StyleSheet.create({
   columnStack: { flexDirection: 'column' },
   dashboardMainColumn: { flex: 1.75, minWidth: 0 },
   dashboardSideColumn: { flex: 0.75, minWidth: 245, gap: 16 },
-  sectionCard: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line, borderRadius: 18, padding: 20 },
+  sectionCard: { backgroundColor: colors.surface, borderWidth: 1, borderColor: '#FFFFFFC7', borderRadius: 22, padding: 20, shadowColor: colors.brandDark, shadowOpacity: 0.055, shadowRadius: 17, shadowOffset: { width: 0, height: 9 }, elevation: 2 },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 },
   sectionTitle: { color: colors.ink, fontSize: 16, fontWeight: '800', letterSpacing: -0.3 },
   sectionSubtitle: { color: colors.muted, fontSize: 11, marginTop: 4 },
@@ -1140,3 +1175,5 @@ const styles = StyleSheet.create({
   bottomNavLabel: { color: colors.muted, fontSize: 9, fontWeight: '700' },
   bottomNavSelected: { color: colors.brand },
 });
+
+let styles = createStyles();

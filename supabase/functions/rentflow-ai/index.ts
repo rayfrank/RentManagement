@@ -231,7 +231,17 @@ async function answerReport(client: ReturnType<typeof createClient>, workspace: 
     client.from('fraud_alerts').select('severity, alert_type, title, details, status, created_at').eq('organization_id', workspace.organizationId).order('created_at', { ascending: false }).limit(100),
   ]);
 
-  const snapshot = { properties: properties ?? [], payments: payments ?? [], recent_audit_events: audits ?? [], alerts: alerts ?? [] };
+  const snapshot = {
+    workbook_opening_totals: {
+      period: '2026-08',
+      through_date: '2026-08-09',
+      mpesa_kes: 13600,
+      bank_kes: 39810,
+      combined_kes: 53410,
+      calculation_note: 'Use these as the confirmed opening totals. If matching GITHURAI opening payment rows exist, do not add this baseline again; otherwise add only payments dated after 2026-08-09.',
+    },
+    properties: properties ?? [], payments: payments ?? [], recent_audit_events: audits ?? [], alerts: alerts ?? [],
+  };
   const format = {
     type: 'json_schema', name: 'rentflow_report_answer', strict: true,
     schema: {

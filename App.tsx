@@ -49,6 +49,7 @@ type Payment = {
   deposit: number;
   accountName: string;
   date: string;
+  isoDate?: string;
   reference: string;
   method: PaymentMethod;
   status: PaymentStatus;
@@ -119,6 +120,36 @@ const initialAuditEvents: AuditEvent[] = [
 ];
 
 const money = (value: number) => `KES ${value.toLocaleString('en-KE')}`;
+const githuraiOpening = {
+  period: '2026-08',
+  cutoff: '2026-08-09',
+  mpesa: { amount: 13600, reference: 'GITHURAI-AUG-2026-MPESA' },
+  bank: { amount: 39810, reference: 'GITHURAI-AUG-2026-BANK' },
+} as const;
+const paymentAmount = (payment: Payment) => payment.rent + payment.services + payment.deposit;
+const paymentPeriod = (payment: Payment) => {
+  const parsed = new Date(payment.isoDate ?? payment.date);
+  return Number.isNaN(parsed.getTime()) ? '' : `${parsed.getFullYear()}-${`${parsed.getMonth() + 1}`.padStart(2, '0')}`;
+};
+const channelTotalsForPeriod = (payments: Payment[], periodDate = new Date()) => {
+  const period = `${periodDate.getFullYear()}-${`${periodDate.getMonth() + 1}`.padStart(2, '0')}`;
+  const current = payments.filter((payment) => paymentPeriod(payment) === period);
+  const totalFor = (method: PaymentMethod) => {
+    const channel = current.filter((payment) => payment.method === method);
+    if (period !== githuraiOpening.period) return channel.reduce((sum, payment) => sum + paymentAmount(payment), 0);
+    const opening = githuraiOpening[method];
+    const hasOpeningRecord = channel.some((payment) => payment.reference === opening.reference);
+    if (hasOpeningRecord) return channel.reduce((sum, payment) => sum + paymentAmount(payment), 0);
+    const afterWorkbook = channel.filter((payment) => (payment.isoDate ?? '') > githuraiOpening.cutoff);
+    return opening.amount + afterWorkbook.reduce((sum, payment) => sum + paymentAmount(payment), 0);
+  };
+  return { mpesa: totalFor('mpesa'), bank: totalFor('bank'), count: current.length };
+};
+const latestReportingPeriod = (payments: Payment[]) => {
+  const periods = [githuraiOpening.period, ...payments.map(paymentPeriod).filter(Boolean)].sort();
+  const latest = periods.at(-1) ?? githuraiOpening.period;
+  return new Date(`${latest}-01T00:00:00`);
+};
 const initials = (name: string) => name.split(' ').filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('');
 const firstName = (name: string) => name.trim().split(' ')[0] || 'there';
 const relationName = (relation: { full_name: string } | Array<{ full_name: string }> | null) => Array.isArray(relation) ? relation[0]?.full_name : relation?.full_name;
@@ -135,6 +166,7 @@ const paymentFromRecord = (record: StoredPayment): Payment => ({
   deposit: Number(record.deposit_amount),
   accountName: record.paid_to_name,
   date: displayDate(record.payment_date),
+  isoDate: record.payment_date,
   reference: record.payment_reference,
   method: record.payment_method ?? 'mpesa',
   status: `${record.status.charAt(0).toUpperCase()}${record.status.slice(1)}` as PaymentStatus,
@@ -233,6 +265,10 @@ function RentFlowApp() {
     const payment: Payment = {
       ...draft,
       id: liveId,
+      isoDate: draft.isoDate ?? (() => {
+        const parsed = new Date(draft.date);
+        return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString().slice(0, 10);
+      })(),
       status: paymentStatus,
       recordedBy: account.fullName,
       recordedAt: 'Just now',
@@ -326,6 +362,8 @@ function RentFlowApp() {
     setNotice('Receipt matched. Review every field before saving the collection.');
   };
 
+  const reportingPeriod = latestReportingPeriod(payments);
+
   return (
     <SafeAreaView style={styles.app}>
       <StatusBar style="dark" />
@@ -337,7 +375,7 @@ function RentFlowApp() {
         {!compact && <Sidebar active={screen} onNavigate={setScreen} account={account} onSignOut={signOut} />}
 
         <View style={styles.main}>
-          <Topbar compact={compact} screen={screen} account={account} />
+          <Topbar compact={compact} screen={screen} account={account} periodDate={reportingPeriod} />
           {notice ? (
             <View style={styles.notice}>
               <Text style={styles.noticeDot}>✓</Text>
@@ -353,6 +391,7 @@ function RentFlowApp() {
               compact={compact}
               payments={payments}
               properties={propertyRecords}
+              periodDate={reportingPeriod}
               onCollect={() => setScreen('collections')}
             />
           )}
@@ -361,6 +400,7 @@ function RentFlowApp() {
             <CollectionsScreen
               compact={compact}
               payments={payments}
+              periodDate={reportingPeriod}
               properties={propertyRecords}
               prefill={receiptPrefill}
               latestPayment={latestPayment}
@@ -424,7 +464,7 @@ function NavButton({ label, symbol, selected, onPress }: { label: string; symbol
   );
 }
 
-function Topbar({ compact, screen, account }: { compact: boolean; screen: Screen; account: Account }) {
+function Topbar({ compact, screen, account, periodDate }: { compact: boolean; screen: Screen; account: Account; periodDate: Date }) {
   const titles: Record<Screen, [string, string]> = {
     overview: [`Good morning, ${firstName(account.fullName)}`, 'Here is how rent collection is going this month.'],
     properties: ['Properties', 'Manage houses, tenants, rent, and service charges.'],
@@ -446,7 +486,7 @@ function Topbar({ compact, screen, account }: { compact: boolean; screen: Screen
       {!compact && (
         <View style={styles.periodPill}>
           <Text style={styles.periodPillLabel}>Period</Text>
-          <Text style={styles.periodPillValue}>{new Intl.DateTimeFormat('en-KE', { month: 'long', year: 'numeric' }).format(new Date())}</Text>
+          <Text style={styles.periodPillValue}>{new Intl.DateTimeFormat('en-KE', { month: 'long', year: 'numeric' }).format(periodDate)}</Text>
         </View>
       )}
     </View>
@@ -467,17 +507,18 @@ function WorkspaceThemePicker({ compact }: { compact: boolean }) {
   );
 }
 
-function OverviewScreen({ compact, payments, properties, onCollect }: { compact: boolean; payments: Payment[]; properties: Property[]; onCollect: () => void }) {
-  const now = new Date();
+function OverviewScreen({ compact, payments, properties, periodDate, onCollect }: { compact: boolean; payments: Payment[]; properties: Property[]; periodDate: Date; onCollect: () => void }) {
+  const now = periodDate;
   const monthPayments = payments.filter((payment) => {
-    const paymentDate = new Date(payment.date);
-    return !Number.isNaN(paymentDate.getTime()) && paymentDate.getFullYear() === now.getFullYear() && paymentDate.getMonth() === now.getMonth();
+    return paymentPeriod(payment) === `${now.getFullYear()}-${`${now.getMonth() + 1}`.padStart(2, '0')}`;
   });
-  const collected = monthPayments.reduce((total, payment) => total + payment.rent + payment.services + payment.deposit, 0);
+  const channelTotals = channelTotalsForPeriod(payments, now);
+  const collected = channelTotals.mpesa + channelTotals.bank;
   const mpesaPayments = monthPayments.filter((payment) => payment.method === 'mpesa');
   const bankPayments = monthPayments.filter((payment) => payment.method === 'bank');
-  const mpesaTotal = mpesaPayments.reduce((total, payment) => total + payment.rent + payment.services + payment.deposit, 0);
-  const bankTotal = bankPayments.reduce((total, payment) => total + payment.rent + payment.services + payment.deposit, 0);
+  const mpesaTotal = channelTotals.mpesa;
+  const bankTotal = channelTotals.bank;
+  const usingGithuraiOpening = `${now.getFullYear()}-${`${now.getMonth() + 1}`.padStart(2, '0')}` === githuraiOpening.period;
   const expected = properties.filter((property) => property.status !== 'Vacant').reduce((total, property) => total + property.rent + property.services, 0);
   const outstanding = Math.max(expected - collected, 0);
   const occupiedCount = properties.filter((property) => property.status !== 'Vacant').length;
@@ -493,8 +534,8 @@ function OverviewScreen({ compact, payments, properties, onCollect }: { compact:
     <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
       <View style={styles.metricsGrid}>
         <MetricCard label="Collected" value={money(collected)} detail={`${collectionPercent}% of expected`} tone="green" />
-        <MetricCard label="M-Pesa total" value={money(mpesaTotal)} detail={`${mpesaPayments.length} payments this month`} tone="green" />
-        <MetricCard label="Bank total" value={money(bankTotal)} detail={`${bankPayments.length} payments this month`} tone="blue" />
+        <MetricCard label="M-Pesa total" value={money(mpesaTotal)} detail={usingGithuraiOpening ? 'Workbook opening + new payments' : `${mpesaPayments.length} payments this month`} tone="green" />
+        <MetricCard label="Bank total" value={money(bankTotal)} detail={usingGithuraiOpening ? 'Workbook opening + new payments' : `${bankPayments.length} payments this month`} tone="blue" />
         <MetricCard label="Expected" value={money(expected)} detail="Rent + service charges" tone="blue" />
         <MetricCard label="Outstanding" value={money(outstanding)} detail="Follow-up required" tone="amber" />
         <MetricCard label="Occupancy" value={`${occupancy}%`} detail={`${occupiedCount} of ${properties.length} houses occupied`} tone="plain" />
@@ -841,7 +882,7 @@ function ActivityScreen({ events, account, onSignOut, onAddMember, compact }: { 
   );
 }
 
-function CollectionsScreen({ compact, latestPayment, payments, properties, prefill, onSave }: { compact: boolean; latestPayment: Payment | null; payments: Payment[]; properties: Property[]; prefill: ReceiptPrefill | null; onSave: (draft: CollectionDraft) => Promise<void> }) {
+function CollectionsScreen({ compact, latestPayment, payments, properties, periodDate, prefill, onSave }: { compact: boolean; latestPayment: Payment | null; payments: Payment[]; properties: Property[]; periodDate: Date; prefill: ReceiptPrefill | null; onSave: (draft: CollectionDraft) => Promise<void> }) {
   const selectedProperty = properties[0] ?? { houseNumber: '', tenant: '', rent: 0, services: 0, status: 'Vacant' as const, members: [] };
   const [form, setForm] = useState<{
     houseNumber: string; tenant: string; rent: string; services: string; deposit: string;
@@ -860,12 +901,12 @@ function CollectionsScreen({ compact, latestPayment, payments, properties, prefi
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
-  const now = new Date();
+  const now = periodDate;
   const currentPayments = payments.filter((payment) => {
-    const paymentDate = new Date(payment.date);
-    return !Number.isNaN(paymentDate.getTime()) && paymentDate.getFullYear() === now.getFullYear() && paymentDate.getMonth() === now.getMonth();
+    return paymentPeriod(payment) === `${now.getFullYear()}-${`${now.getMonth() + 1}`.padStart(2, '0')}`;
   });
-  const channelTotal = (method: PaymentMethod) => currentPayments.filter((payment) => payment.method === method).reduce((sum, payment) => sum + payment.rent + payment.services + payment.deposit, 0);
+  const channelTotals = channelTotalsForPeriod(payments, now);
+  const channelDetail = `${now.getFullYear()}-${`${now.getMonth() + 1}`.padStart(2, '0')}` === githuraiOpening.period ? 'Workbook opening + new payments' : 'This month';
 
   useEffect(() => {
     if (!prefill) return;
@@ -942,9 +983,9 @@ function CollectionsScreen({ compact, latestPayment, payments, properties, prefi
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flexOne}>
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <View style={styles.channelSummary}>
-          <View style={[styles.channelTotalCard, styles.channelMpesaCard]}><Text style={styles.channelLabel}>M-PESA TOTAL</Text><Text style={styles.channelValue}>{money(channelTotal('mpesa'))}</Text><Text style={styles.channelDetail}>This month</Text></View>
-          <View style={[styles.channelTotalCard, styles.channelBankCard]}><Text style={styles.channelLabel}>BANK TOTAL</Text><Text style={styles.channelValue}>{money(channelTotal('bank'))}</Text><Text style={styles.channelDetail}>This month</Text></View>
-          <View style={styles.channelTotalCard}><Text style={styles.channelLabel}>COMBINED</Text><Text style={styles.channelValue}>{money(channelTotal('mpesa') + channelTotal('bank'))}</Text><Text style={styles.channelDetail}>{currentPayments.length} payments</Text></View>
+          <View style={[styles.channelTotalCard, styles.channelMpesaCard]}><Text style={styles.channelLabel}>M-PESA TOTAL</Text><Text style={styles.channelValue}>{money(channelTotals.mpesa)}</Text><Text style={styles.channelDetail}>{channelDetail}</Text></View>
+          <View style={[styles.channelTotalCard, styles.channelBankCard]}><Text style={styles.channelLabel}>BANK TOTAL</Text><Text style={styles.channelValue}>{money(channelTotals.bank)}</Text><Text style={styles.channelDetail}>{channelDetail}</Text></View>
+          <View style={styles.channelTotalCard}><Text style={styles.channelLabel}>COMBINED</Text><Text style={styles.channelValue}>{money(channelTotals.mpesa + channelTotals.bank)}</Text><Text style={styles.channelDetail}>{currentPayments.length} saved payments</Text></View>
         </View>
         <View style={[styles.collectionColumns, compact && styles.columnStack]}>
           <View style={[styles.sectionCard, styles.collectionForm]}>

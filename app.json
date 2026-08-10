@@ -1,11 +1,15 @@
 {
   "expo": {
-    "name": "RentManagement",
-    "slug": "RentManagement",
+    "name": "RentFlow",
+    "slug": "rentflow",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "description": "Rent collection and property management for web, Android, and iOS.",
+    "experiments": {
+      "baseUrl": "/RentManagement"
+    },
     "ios": {
       "supportsTablet": true
     },

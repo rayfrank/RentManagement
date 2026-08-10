@@ -18,6 +18,7 @@ import { AuthScreen } from './src/auth/AuthScreen';
 import { AIWorkspace, type ReceiptPrefill } from './src/ai/AIWorkspace';
 import { addOrganizationMember, fetchAuditEvents, fetchPayments, fetchProperties, savePaymentRecord, savePropertyRecord, type StoredAuditEvent, type StoredPayment, type StoredProperty } from './src/data/records';
 import { ThemeProvider, themes, type ThemeName, type ThemePalette, useTheme } from './src/theme/ThemeProvider';
+import { GlassControl } from './src/theme/GlassControl';
 
 type Screen = 'overview' | 'properties' | 'collections' | 'ai' | 'activity';
 type PaymentStatus = 'Paid' | 'Partial' | 'Overdue';
@@ -390,7 +391,10 @@ function Topbar({ compact, screen, account }: { compact: boolean; screen: Screen
         <Text style={[styles.pageTitle, compact && styles.pageTitleCompact]}>{titles[screen][0]}</Text>
         <Text style={styles.pageSubtitle}>{titles[screen][1]}</Text>
       </View>
-      <WorkspaceThemePicker compact={compact} />
+      <View style={[styles.appearanceControls, compact && styles.appearanceControlsCompact]}>
+        <WorkspaceThemePicker compact={compact} />
+        <GlassControl compact={compact} />
+      </View>
       {!compact && (
         <View style={styles.periodPill}>
           <Text style={styles.periodPillLabel}>Period</Text>
@@ -989,6 +993,8 @@ const createStyles = () => StyleSheet.create({
   pageTitleCompact: { fontSize: 23, marginTop: 20 },
   pageSubtitle: { color: colors.muted, fontSize: 13, lineHeight: 19 },
   workspaceThemePicker: { flexDirection: 'row', alignItems: 'center', gap: 4, padding: 4, borderRadius: 999, backgroundColor: '#FFFFFF91', borderWidth: 1, borderColor: '#FFFFFFD1' },
+  appearanceControls: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  appearanceControlsCompact: { alignItems: 'flex-end', flexDirection: 'column', gap: 5 },
   workspaceThemeChoice: { flexDirection: 'row', alignItems: 'center', gap: 5, minHeight: 30, paddingHorizontal: 8, borderRadius: 999 },
   workspaceThemeChoiceActive: { backgroundColor: '#FFFFFFE8', shadowColor: colors.brandDark, shadowOpacity: 0.09, shadowRadius: 6, elevation: 2 },
   workspaceThemeDot: { width: 7, height: 7, borderRadius: 4 },

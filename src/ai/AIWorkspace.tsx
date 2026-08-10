@@ -2,6 +2,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import type { Account } from '../auth/AuthProvider';
+import { type ThemePalette, useTheme } from '../theme/ThemeProvider';
 import {
   askRentFlow,
   fetchFraudAlerts,
@@ -36,10 +37,10 @@ export type ReceiptPrefill = {
 
 type Tab = 'scanner' | 'reminders' | 'ask' | 'alerts';
 
-const palette = {
+const palette: ThemePalette = {
   ink: '#172622', muted: '#687670', canvas: '#F4F6F1', surface: '#FFFFFF', line: '#DEE5DE',
   brand: '#176B52', brandDark: '#0C4B39', brandPale: '#E1F2EA', amber: '#C57A22', amberPale: '#FFF1D9',
-  red: '#B84A43', redPale: '#FBE7E5', bluePale: '#E4EEF9',
+  red: '#B84A43', redPale: '#FBE7E5', bluePale: '#E4EEF9', glowOne: '#A9E5CA', glowTwo: '#D7E7A8',
 };
 
 export function AIWorkspace({ compact, account, properties, onUseReceipt }: {
@@ -48,6 +49,9 @@ export function AIWorkspace({ compact, account, properties, onUseReceipt }: {
   properties: AIProperty[];
   onUseReceipt: (prefill: ReceiptPrefill) => void;
 }) {
+  const { palette: activePalette } = useTheme();
+  Object.assign(palette, activePalette);
+  styles = createStyles();
   const [tab, setTab] = useState<Tab>('scanner');
   const tabs: Array<{ id: Tab; label: string; symbol: string }> = [
     { id: 'scanner', label: 'M-Pesa scanner', symbol: '▣' },
@@ -296,7 +300,7 @@ function ErrorBox({ message }: { message: string }) { return <View style={styles
 function Pill({ active, label, onPress }: { active: boolean; label: string; onPress: () => void }) { return <Pressable onPress={onPress} style={[styles.pill, active && styles.pillActive]}><Text style={[styles.pillText, active && styles.pillTextActive]}>{label}</Text></Pressable>; }
 function Choice({ active, label, detail, onPress }: { active: boolean; label: string; detail: string; onPress: () => void }) { return <Pressable onPress={onPress} style={[styles.choice, active && styles.choiceActive]}><View style={[styles.radio, active && styles.radioActive]} /> <View><Text style={styles.choiceLabel}>{label}</Text><Text style={styles.choiceDetail}>{detail}</Text></View></Pressable>; }
 
-const styles = StyleSheet.create({
+const createStyles = () => StyleSheet.create({
   page: { paddingHorizontal: 38, paddingBottom: 50 },
   safetyBanner: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 15, backgroundColor: palette.brandPale, borderWidth: 1, borderColor: '#CAE1D5' },
   safetyMark: { width: 37, height: 37, borderRadius: 12, backgroundColor: palette.brand, alignItems: 'center', justifyContent: 'center' },
@@ -305,7 +309,7 @@ const styles = StyleSheet.create({
   tabs: { flexDirection: 'row', gap: 7, paddingVertical: 14 }, tab: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 13, paddingVertical: 10, borderRadius: 11, backgroundColor: palette.surface, borderWidth: 1, borderColor: palette.line },
   tabActive: { backgroundColor: palette.brandDark, borderColor: palette.brandDark }, tabSymbol: { color: palette.muted, fontSize: 13 }, tabText: { color: palette.muted, fontSize: 9, fontWeight: '700' }, tabTextActive: { color: palette.surface },
   twoColumns: { flexDirection: 'row', alignItems: 'flex-start', gap: 14 }, stack: { flexDirection: 'column', alignItems: 'stretch' },
-  card: { flex: 1, minWidth: 0, backgroundColor: palette.surface, borderWidth: 1, borderColor: palette.line, borderRadius: 18, padding: 20 }, resultColumn: { flex: 1, minWidth: 0 },
+  card: { flex: 1, minWidth: 0, backgroundColor: palette.surface, borderWidth: 1, borderColor: '#FFFFFFC7', borderRadius: 22, padding: 20, shadowColor: palette.brandDark, shadowOpacity: 0.07, shadowRadius: 18, shadowOffset: { width: 0, height: 9 }, elevation: 3 }, resultColumn: { flex: 1, minWidth: 0 },
   cardTitle: { color: palette.ink, fontSize: 16, fontWeight: '900', letterSpacing: -0.3 }, cardSubtitle: { color: palette.muted, fontSize: 10, lineHeight: 16, marginTop: 5, marginBottom: 19 },
   label: { color: palette.muted, fontSize: 8, fontWeight: '800', letterSpacing: 0.8, marginBottom: 7, marginTop: 6 },
   messageInput: { minHeight: 126, textAlignVertical: 'top', color: palette.ink, backgroundColor: '#FAFBF9', borderWidth: 1, borderColor: palette.line, borderRadius: 12, padding: 13, fontSize: 11, lineHeight: 17 },
@@ -327,3 +331,5 @@ const styles = StyleSheet.create({
   alertCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, borderTopWidth: 1, borderTopColor: '#EDF0ED', paddingVertical: 14 }, severity: { borderRadius: 7, paddingHorizontal: 7, paddingVertical: 5 }, severityHigh: { backgroundColor: palette.redPale }, severityMedium: { backgroundColor: palette.amberPale }, severityLow: { backgroundColor: palette.bluePale }, severityText: { color: palette.ink, fontSize: 7, fontWeight: '900' }, alertBody: { flex: 1 }, alertTitle: { color: palette.ink, fontSize: 10, fontWeight: '800' }, alertDetails: { color: palette.muted, fontSize: 9, lineHeight: 14, marginTop: 4 }, alertMeta: { color: '#929C98', fontSize: 7, marginTop: 6 }, alertActions: { alignItems: 'flex-end', gap: 8 }, reviewLink: { color: palette.brand, fontSize: 8, fontWeight: '800' }, dismissLink: { color: palette.muted, fontSize: 8 },
   setupCard: { backgroundColor: palette.amberPale, borderRadius: 16, padding: 22, alignItems: 'center' }, setupTitle: { color: palette.ink, fontSize: 13, fontWeight: '800' }, setupText: { color: palette.muted, fontSize: 9, lineHeight: 15, marginTop: 5, textAlign: 'center', maxWidth: 500 },
 });
+
+let styles = createStyles();

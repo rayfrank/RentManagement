@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { GlassControl } from '../theme/GlassControl';
 import { themes, type ThemeName, type ThemePalette, useTheme } from '../theme/ThemeProvider';
 import { useAuth } from './AuthProvider';
 
@@ -86,7 +87,10 @@ export function AuthScreen() {
       <ScrollView contentContainerStyle={[styles.pageContent, !wide && { width: Math.max(width - 48, 272), maxWidth: Math.max(width - 48, 272), paddingHorizontal: 0 }]} keyboardShouldPersistTaps="handled">
         <View style={styles.topRow}>
           <Brand styles={styles} />
-          <ThemePicker compact={!wide} theme={theme} setTheme={setTheme} palette={palette} styles={styles} />
+          <View style={styles.appearanceStack}>
+            <ThemePicker compact={!wide} theme={theme} setTheme={setTheme} palette={palette} styles={styles} />
+            <GlassControl compact={!wide} />
+          </View>
         </View>
 
         <View style={[styles.stage, wide && styles.stageWide]}>
@@ -220,6 +224,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
   lightWash: { position: 'absolute', left: '15%', right: '10%', top: '16%', height: 220, borderRadius: 110, backgroundColor: '#FFFFFF55', transform: [{ rotate: '-8deg' }] },
   pageContent: { flexGrow: 1, width: '100%', maxWidth: 1240, alignSelf: 'center', paddingHorizontal: 24, paddingTop: 24, paddingBottom: 28 },
   topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 18 },
+  appearanceStack: { alignItems: 'flex-end', gap: 6 },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: 11 },
   brandMark: { width: 44, height: 44, borderRadius: 15, backgroundColor: palette.brand, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', shadowColor: palette.brand, shadowOpacity: 0.28, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 6 },
   brandOrb: { position: 'absolute', width: 30, height: 30, borderRadius: 15, backgroundColor: '#FFFFFF42', top: -8, right: -5 },

@@ -30,7 +30,9 @@ const outputText = (response: Record<string, unknown>) => {
 
 async function callOpenAI(input: unknown, format?: Record<string, unknown>) {
   const apiKey = Deno.env.get('OPENAI_API_KEY');
-  if (!apiKey) throw new Error('OPENAI_API_KEY is not configured for this Edge Function.');
+  if (!apiKey || apiKey === 'your-key' || !apiKey.startsWith('sk-')) {
+    throw new Error('OpenAI is not connected. Replace OPENAI_API_KEY in Supabase Edge Function secrets with a valid API key.');
+  }
 
   const model = Deno.env.get('OPENAI_MODEL') || 'gpt-5-mini';
   const response = await fetch('https://api.openai.com/v1/responses', {
@@ -45,6 +47,8 @@ async function callOpenAI(input: unknown, format?: Record<string, unknown>) {
 
   const payload = await response.json();
   if (!response.ok) {
+    if (response.status === 401) throw new Error('OpenAI rejected the configured API key. Replace OPENAI_API_KEY in Supabase Edge Function secrets.');
+    if (response.status === 429) throw new Error('OpenAI usage is temporarily unavailable. Check API billing or wait for the rate limit to reset.');
     const message = payload?.error?.message || `OpenAI request failed with ${response.status}.`;
     throw new Error(message);
   }

@@ -157,7 +157,7 @@ async function scanMpesa(client: ReturnType<typeof createClient>, workspace: Wor
     transaction_time: equityAlert.transaction_time,
     payer_name: equityAlert.payer_name,
     payer_phone: equityAlert.payer_phone,
-    recipient_name: 'Equity Bank',
+    recipient_name: 'Equity Bank (via M-Pesa)',
     house_number_hint: null,
     provider: equityAlert.provider,
     source_channel: equityAlert.source_channel,

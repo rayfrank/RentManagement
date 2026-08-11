@@ -919,6 +919,7 @@ function CollectionsScreen({ compact, latestPayment, payments, properties, perio
       accountName: prefill.accountName || current.accountName,
       date: prefill.date,
       reference: prefill.reference,
+      method: prefill.method,
     }));
     setErrors({});
     setSaveError('');
@@ -998,7 +999,7 @@ function CollectionsScreen({ compact, latestPayment, payments, properties, perio
             </View>
 
             <View style={styles.methodSection}>
-              <Text style={styles.fieldLabel}>Payment method</Text>
+              <Text style={styles.fieldLabel}>Money received in</Text>
               <View style={styles.methodPicker}>
                 {(['mpesa', 'bank'] as const).map((method) => (
                   <Pressable key={method} onPress={() => setForm((current) => ({ ...current, method }))} style={[styles.methodChoice, form.method === method && styles.methodChoiceActive]}>

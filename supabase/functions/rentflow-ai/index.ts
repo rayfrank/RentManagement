@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { parseEquityCreditAlert } from '../_shared/equity-alert.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -117,7 +118,7 @@ async function scanMpesa(client: ReturnType<typeof createClient>, workspace: Wor
 
   const content: Array<Record<string, unknown>> = [{
     type: 'input_text',
-    text: `Extract the M-Pesa transaction facts. Do not guess missing values.\n\nMessage text:\n${receiptText || '[image only]'}`,
+    text: `Extract the payment transaction facts. Do not guess missing values. payment_method means where the recipient received the money: a credit reported by Equity Bank is bank even when its source rail says via M-Pesa.\n\nMessage text:\n${receiptText || '[image only]'}`,
   }];
   if (imageDataUrl) content.push({ type: 'input_image', image_url: imageDataUrl, detail: 'high' });
 
@@ -137,15 +138,33 @@ async function scanMpesa(client: ReturnType<typeof createClient>, workspace: Wor
         payer_phone: { type: ['string', 'null'] },
         recipient_name: { type: ['string', 'null'] },
         house_number_hint: { type: ['string', 'null'] },
+        provider: { type: ['string', 'null'] },
+        source_channel: { type: 'string', enum: ['mpesa', 'bank', 'unknown'] },
+        destination_channel: { type: 'string', enum: ['mpesa', 'bank', 'unknown'] },
         confidence: { type: 'number', minimum: 0, maximum: 1 },
         warnings: { type: 'array', items: { type: 'string' } },
       },
-      required: ['transaction_reference', 'amount', 'transaction_date', 'transaction_time', 'payer_name', 'payer_phone', 'recipient_name', 'house_number_hint', 'confidence', 'warnings'],
+      required: ['transaction_reference', 'amount', 'transaction_date', 'transaction_time', 'payer_name', 'payer_phone', 'recipient_name', 'house_number_hint', 'provider', 'source_channel', 'destination_channel', 'confidence', 'warnings'],
     },
   };
 
-  const ai = await callOpenAI([{ role: 'user', content }], schema);
-  const receipt = JSON.parse(ai.text);
+  const equityAlert = receiptText ? parseEquityCreditAlert(receiptText) : null;
+  const ai = equityAlert ? null : await callOpenAI([{ role: 'user', content }], schema);
+  const receipt = equityAlert ? {
+    transaction_reference: equityAlert.transaction_reference,
+    amount: equityAlert.amount,
+    transaction_date: equityAlert.transaction_date,
+    transaction_time: equityAlert.transaction_time,
+    payer_name: equityAlert.payer_name,
+    payer_phone: equityAlert.payer_phone,
+    recipient_name: 'Equity Bank',
+    house_number_hint: null,
+    provider: equityAlert.provider,
+    source_channel: equityAlert.source_channel,
+    destination_channel: equityAlert.destination_channel,
+    confidence: 1,
+    warnings: [],
+  } : JSON.parse(ai!.text);
   if (receipt.transaction_reference) receipt.transaction_reference = String(receipt.transaction_reference).toUpperCase().trim();
 
   const { data: duplicate } = receipt.transaction_reference
@@ -165,13 +184,17 @@ async function scanMpesa(client: ReturnType<typeof createClient>, workspace: Wor
     if (receipt.amount && Math.abs(Number(receipt.amount) - expected) < 1) {
       score += 25; reasons.push('amount matches rent and services');
     }
-    if (receipt.payer_name && property.tenant_name && String(receipt.payer_name).toLowerCase().includes(String(property.tenant_name).split(' ')[0].toLowerCase())) {
+    const normalizedPayer = String(receipt.payer_name ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const normalizedTenant = String(property.tenant_name ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (normalizedPayer && normalizedPayer === normalizedTenant) {
+      score += 70; reasons.push('payer name matches tenant');
+    } else if (receipt.payer_name && property.tenant_name && String(receipt.payer_name).toLowerCase().includes(String(property.tenant_name).split(' ')[0].toLowerCase())) {
       score += 20; reasons.push('payer resembles tenant');
     }
     return { property, score: Math.min(score, 100), reasons };
   }).filter((candidate: { score: number }) => candidate.score > 0).sort((a: { score: number }, b: { score: number }) => b.score - a.score).slice(0, 3);
 
-  return { receipt, duplicate, candidates, model: ai.model };
+  return { receipt, duplicate, candidates, model: ai?.model ?? 'equity-alert-parser-v1' };
 }
 
 async function generateReminder(client: ReturnType<typeof createClient>, workspace: Workspace, body: Record<string, unknown>) {

@@ -25,6 +25,7 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
+    "test:equity-parser": "node --test supabase/functions/_shared/equity-alert.test.ts",
     "typecheck": "tsc --noEmit",
     "build:web": "expo export --platform web"
   },

@@ -33,6 +33,7 @@ export type ReceiptPrefill = {
   accountName: string;
   date: string;
   reference: string;
+  method: 'mpesa' | 'bank';
 };
 
 type Tab = 'scanner' | 'reminders' | 'ask' | 'alerts';
@@ -55,7 +56,7 @@ export function AIWorkspace({ compact, account, properties, onUseReceipt }: {
   const [tab, setTab] = useState<Tab>('ask');
   const tabs: Array<{ id: Tab; label: string; symbol: string }> = [
     { id: 'ask', label: 'AI assistant', symbol: 'AI' },
-    { id: 'scanner', label: 'M-Pesa scanner', symbol: '▣' },
+    { id: 'scanner', label: 'Payment scanner', symbol: '▣' },
     { id: 'reminders', label: 'Reminders', symbol: '✦' },
     { id: 'alerts', label: 'Fraud alerts', symbol: '!' },
   ];
@@ -107,7 +108,7 @@ function ScannerPanel({ compact, onUseReceipt }: { compact: boolean; onUseReceip
   const chooseImage = async () => {
     setError('');
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) return setError('Allow photo access to choose an M-Pesa screenshot.');
+    if (!permission.granted) return setError('Allow photo access to choose a payment screenshot.');
     const selected = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], base64: true, quality: 0.65 });
     if (selected.canceled) return;
     const asset = selected.assets[0];
@@ -137,16 +138,17 @@ function ScannerPanel({ compact, onUseReceipt }: { compact: boolean; onUseReceip
       accountName: result.receipt.recipient_name || '',
       date: result.receipt.transaction_date || new Date().toISOString().slice(0, 10),
       reference: result.receipt.transaction_reference || '',
+      method: result.receipt.destination_channel === 'bank' ? 'bank' : 'mpesa',
     });
   };
 
   return (
     <View style={[styles.twoColumns, compact && styles.stack]}>
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Scan an M-Pesa receipt</Text>
-        <Text style={styles.cardSubtitle}>Paste the confirmation message, attach a screenshot, or use both for the best match.</Text>
-        <Text style={styles.label}>M-PESA MESSAGE</Text>
-        <TextInput value={receiptText} onChangeText={setReceiptText} multiline placeholder="Paste the complete M-Pesa confirmation message…" placeholderTextColor="#97A19D" style={styles.messageInput} />
+        <Text style={styles.cardTitle}>Scan a payment alert</Text>
+        <Text style={styles.cardSubtitle}>Paste an M-Pesa or Equity confirmation, attach a screenshot, or use both.</Text>
+        <Text style={styles.label}>PAYMENT MESSAGE</Text>
+        <TextInput value={receiptText} onChangeText={setReceiptText} multiline placeholder="Paste the complete payment confirmation…" placeholderTextColor="#97A19D" style={styles.messageInput} />
 
         {imageDataUrl ? <Image source={{ uri: imageDataUrl }} style={styles.receiptImage} resizeMode="contain" /> : null}
         <View style={[styles.actionRow, compact && styles.stack]}>
@@ -171,6 +173,8 @@ function ScannerPanel({ compact, onUseReceipt }: { compact: boolean; onUseReceip
             <Detail label="Date" value={result.receipt.transaction_date || 'Not found'} />
             <Detail label="Payer" value={result.receipt.payer_name || 'Not found'} />
             <Detail label="Paid to" value={result.receipt.recipient_name || 'Not found'} />
+            <Detail label="Counted under" value={result.receipt.destination_channel === 'bank' ? 'Bank total' : result.receipt.destination_channel === 'mpesa' ? 'M-Pesa total' : 'Needs review'} />
+            <Detail label="Source" value={result.receipt.source_channel === 'mpesa' ? 'M-Pesa' : result.receipt.source_channel === 'bank' ? 'Bank' : 'Not found'} />
 
             {result.duplicate ? <View style={styles.duplicateBox}><Text style={styles.duplicateTitle}>Possible duplicate</Text><Text style={styles.duplicateText}>This reference already exists for House {result.duplicate.house_number}. Do not record it again.</Text></View> : null}
 

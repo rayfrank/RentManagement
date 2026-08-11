@@ -9,6 +9,9 @@ export type MpesaReceipt = {
   payer_phone: string | null;
   recipient_name: string | null;
   house_number_hint: string | null;
+  provider: string | null;
+  source_channel: 'mpesa' | 'bank' | 'unknown';
+  destination_channel: 'mpesa' | 'bank' | 'unknown';
   confidence: number;
   warnings: string[];
 };
